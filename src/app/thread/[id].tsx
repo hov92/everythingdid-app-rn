@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,7 +14,17 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { fetchTopicDetail, postReply, ReplyRow } from '../../lib/api';
+import {
+  fetchTopicDetail,
+  postReply,
+  ReplyRow,
+} from '../../lib/api';
+import {
+  pickSingleImage,
+  takePhoto,
+  uploadWpMedia,
+  PickedMedia,
+} from '../../lib/media';
 import { useAuthStore } from '../../store/auth-store';
 
 export default function ThreadDetailScreen() {
@@ -24,6 +35,8 @@ export default function ThreadDetailScreen() {
   const queryClient = useQueryClient();
 
   const [replyText, setReplyText] = useState('');
+  const [pickedImage, setPickedImage] = useState<PickedMedia | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const detailQuery = useQuery({
     queryKey: ['thread-detail', topicId],
@@ -32,13 +45,26 @@ export default function ThreadDetailScreen() {
   });
 
   const replyMutation = useMutation({
-    mutationFn: () =>
-      postReply({
+    mutationFn: async () => {
+      let mediaIds: number[] = [];
+
+      if (pickedImage) {
+        setUploadingImage(true);
+        const mediaId = await uploadWpMedia(pickedImage);
+        setUploadingImage(false);
+
+        if (mediaId) mediaIds = [mediaId];
+      }
+
+      return postReply({
         topicId,
         content: replyText.trim(),
-      }),
+        mediaIds,
+      });
+    },
     onSuccess: async () => {
       setReplyText('');
+      setPickedImage(null);
       await queryClient.invalidateQueries({
         queryKey: ['thread-detail', topicId],
       });
@@ -46,10 +72,32 @@ export default function ThreadDetailScreen() {
         queryKey: ['topics'],
       });
     },
+    onError: () => {
+      setUploadingImage(false);
+    },
   });
 
   const detail = detailQuery.data;
-  const canReply = replyText.trim().length > 0 && !replyMutation.isPending;
+  const busy = replyMutation.isPending || uploadingImage;
+  const canReply = replyText.trim().length > 0 && !busy;
+
+  async function handlePickImage() {
+    try {
+      const file = await pickSingleImage();
+      if (file) setPickedImage(file);
+    } catch (e) {
+      console.log('pick image failed', e);
+    }
+  }
+
+  async function handleTakePhoto() {
+    try {
+      const file = await takePhoto();
+      if (file) setPickedImage(file);
+    } catch (e) {
+      console.log('take photo failed', e);
+    }
+  }
 
   function handleReply() {
     if (!token) {
@@ -130,25 +178,47 @@ export default function ThreadDetailScreen() {
         />
 
         <View style={styles.replyBar}>
-          <TextInput
-            value={replyText}
-            onChangeText={setReplyText}
-            placeholder={token ? 'Write a reply...' : 'Log in to reply...'}
-            placeholderTextColor="#8b8b8b"
-            style={styles.replyInput}
-            multiline
-            editable={!replyMutation.isPending}
-          />
+          {pickedImage ? (
+            <View style={styles.previewWrap}>
+              <Image source={{ uri: pickedImage.uri }} style={styles.previewImage} />
+              <Pressable
+                onPress={() => setPickedImage(null)}
+                style={styles.removePreviewBtn}
+              >
+                <Text style={styles.removePreviewText}>Remove</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
-          <Pressable
-            onPress={handleReply}
-            style={[styles.replyBtn, !canReply && styles.replyBtnDisabled]}
-            disabled={!canReply && !!token}
-          >
-            <Text style={styles.replyBtnText}>
-              {replyMutation.isPending ? 'Posting...' : 'Post'}
-            </Text>
-          </Pressable>
+          <View style={styles.replyControls}>
+            <Pressable onPress={handlePickImage} style={styles.mediaBtn}>
+              <Text style={styles.mediaBtnText}>🖼️</Text>
+            </Pressable>
+
+            <Pressable onPress={handleTakePhoto} style={styles.mediaBtn}>
+              <Text style={styles.mediaBtnText}>📷</Text>
+            </Pressable>
+
+            <TextInput
+              value={replyText}
+              onChangeText={setReplyText}
+              placeholder={token ? 'Write a reply...' : 'Log in to reply...'}
+              placeholderTextColor="#8b8b8b"
+              style={styles.replyInput}
+              multiline
+              editable={!busy}
+            />
+
+            <Pressable
+              onPress={handleReply}
+              style={[styles.replyBtn, !canReply && styles.replyBtnDisabled]}
+              disabled={!canReply && !!token}
+            >
+              <Text style={styles.replyBtnText}>
+                {busy ? 'Posting...' : 'Post'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -207,7 +277,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   listContent: {
-    paddingBottom: 110,
+    paddingBottom: 150,
   },
   headerWrap: {
     paddingHorizontal: 16,
@@ -308,15 +378,50 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'flex-end',
     paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: Platform.OS === 'ios' ? 18 : 12,
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderTopColor: '#ececf1',
+  },
+  previewWrap: {
+    marginBottom: 10,
+  },
+  previewImage: {
+    width: 110,
+    height: 110,
+    borderRadius: 14,
+    backgroundColor: '#eee',
+  },
+  removePreviewBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#ececf1',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  removePreviewText: {
+    color: '#111',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  replyControls: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  mediaBtn: {
+    width: 42,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: '#f1f1f4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaBtnText: {
+    fontSize: 18,
   },
   replyInput: {
     flex: 1,

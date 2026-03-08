@@ -220,12 +220,20 @@ export async function createThread({
 export async function postReply({
   topicId,
   content,
+  mediaIds = [],
 }: {
   topicId: number | string;
   content: string;
+  mediaIds?: number[];
 }) {
-  return apiPost('/reply', {
+  const payload: Record<string, any> = {
     topic_id: Number(topicId),
     content: String(content).trim(),
-  });
+  };
+
+  if (mediaIds.length) {
+    payload['bbp_media'] = mediaIds;
+  }
+
+  return apiPost('/reply', payload);
 }
