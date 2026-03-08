@@ -74,17 +74,16 @@ export default function ProfileScreen() {
             )}
 
             <Section
-              title="Saved Threads"
+              title="Saved"
               loading={savedQuery.isLoading}
               emptyText="No saved threads yet."
               items={savedQuery.data ?? []}
             />
 
             <Section
-              title="Subscribed Threads"
+              title="Following"
               loading={subscribedQuery.isLoading}
-              emptyText={loggedIn ? 'No subscriptions yet.' : 'Log in to see subscriptions.'}
-              items={subscribedQuery.data ?? []}
+emptyText={loggedIn ? 'You are not following any threads yet.' : 'Log in to see followed threads.'}              items={subscribedQuery.data ?? []}
             />
           </View>
         }

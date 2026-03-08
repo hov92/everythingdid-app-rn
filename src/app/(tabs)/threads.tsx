@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { useSavedThreadsStore } from '../../store/saved-threads-store';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,10 +12,16 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { fetchForums, fetchTopics, TopicRow } from '../../lib/api';
+import {
+  fetchForums,
+  fetchTopics,
+  fetchSubscribedThreads,
+  TopicRow,
+} from '../../lib/api';
 import { useAuthStore } from '../../store/auth-store';
+import { useSavedThreadsStore } from '../../store/saved-threads-store';
 
-type SortType = 'latest' | 'trending';
+type SortType = 'latest' | 'trending' | 'following';
 
 export default function ThreadsScreen() {
   const [sort, setSort] = useState<SortType>('latest');
@@ -36,14 +41,27 @@ export default function ThreadsScreen() {
     queryKey: ['topics', selectedForumId, search, sort],
     queryFn: () =>
       fetchTopics({
-        forumId: selectedForumId,
-        search: search.trim(),
-        sort,
+        forumId: sort === 'following' ? null : selectedForumId,
+        search: sort === 'following' ? '' : search.trim(),
+        sort: sort === 'trending' ? 'trending' : 'latest',
       }),
+    enabled: sort !== 'following',
+  });
+
+  const followingQuery = useQuery({
+    queryKey: ['following-topics', !!token],
+    queryFn: fetchSubscribedThreads,
+    enabled: !!token && sort === 'following',
   });
 
   const forums = forumsQuery.data ?? [];
-  const topics = topicsQuery.data ?? [];
+  const topics =
+    sort === 'following'
+      ? ((followingQuery.data ?? []) as TopicRow[])
+      : (topicsQuery.data ?? []);
+
+  const isLoading =
+    sort === 'following' ? followingQuery.isLoading : topicsQuery.isLoading;
 
   const header = useMemo(
     () => (
@@ -80,9 +98,17 @@ export default function ThreadsScreen() {
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Search discussions"
+          placeholder={
+            sort === 'following'
+              ? 'Following feed ignores search'
+              : 'Search discussions'
+          }
           placeholderTextColor="#8b8b8b"
-          style={styles.search}
+          style={[
+            styles.search,
+            sort === 'following' && styles.searchDisabled,
+          ]}
+          editable={sort !== 'following'}
         />
 
         <View style={styles.sortRow}>
@@ -96,6 +122,11 @@ export default function ThreadsScreen() {
             active={sort === 'trending'}
             onPress={() => setSort('trending')}
           />
+          <SortPill
+            label="Following"
+            active={sort === 'following'}
+            onPress={() => setSort('following')}
+          />
         </View>
 
         <ScrollView
@@ -107,6 +138,7 @@ export default function ThreadsScreen() {
             label="All"
             active={selectedForumId === null}
             onPress={() => setSelectedForumId(null)}
+            disabled={sort === 'following'}
           />
 
           {forums.map((forum) => (
@@ -115,9 +147,16 @@ export default function ThreadsScreen() {
               label={forum.title}
               active={selectedForumId === forum.id}
               onPress={() => setSelectedForumId(forum.id)}
+              disabled={sort === 'following'}
             />
           ))}
         </ScrollView>
+
+        {sort === 'following' ? (
+          <Text style={styles.helperText}>
+            Showing threads you’re following.
+          </Text>
+        ) : null}
       </View>
     ),
     [forums, search, selectedForumId, sort, token, username, clearAuth]
@@ -125,7 +164,7 @@ export default function ThreadsScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      {topicsQuery.isLoading && !topics.length ? (
+      {isLoading && !topics.length ? (
         <View style={styles.centerState}>
           <ActivityIndicator />
         </View>
@@ -137,8 +176,16 @@ export default function ThreadsScreen() {
           ListHeaderComponent={header}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>No threads found</Text>
-              <Text style={styles.emptyText}>Try another search or category.</Text>
+              <Text style={styles.emptyTitle}>
+                {sort === 'following' ? 'No followed threads yet' : 'No threads found'}
+              </Text>
+              <Text style={styles.emptyText}>
+                {sort === 'following'
+                  ? token
+                    ? 'Subscribe to threads to see them here.'
+                    : 'Log in to view followed threads.'
+                  : 'Try another search or category.'}
+              </Text>
             </View>
           }
           contentContainerStyle={styles.listContent}
@@ -158,7 +205,10 @@ function SortPill({
   onPress: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={[styles.sortPill, active && styles.sortPillActive]}>
+    <Pressable
+      onPress={onPress}
+      style={[styles.sortPill, active && styles.sortPillActive]}
+    >
       <Text style={[styles.sortPillText, active && styles.sortPillTextActive]}>
         {label}
       </Text>
@@ -170,14 +220,31 @@ function ForumChip({
   label,
   active,
   onPress,
+  disabled = false,
 }: {
   label: string;
   active: boolean;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
-      <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[
+        styles.chip,
+        active && styles.chipActive,
+        disabled && styles.chipDisabled,
+      ]}
+    >
+      <Text
+        style={[
+          styles.chipText,
+          active && styles.chipTextActive,
+          disabled && styles.chipTextDisabled,
+        ]}
+        numberOfLines={1}
+      >
         {label}
       </Text>
     </Pressable>
@@ -203,7 +270,9 @@ function ThreadCard({ item }: { item: TopicRow }) {
           }}
           style={[styles.saveChip, isSaved && styles.saveChipActive]}
         >
-          <Text style={[styles.saveChipText, isSaved && styles.saveChipTextActive]}>
+          <Text
+            style={[styles.saveChipText, isSaved && styles.saveChipTextActive]}
+          >
             {isSaved ? 'Saved' : 'Save'}
           </Text>
         </Pressable>
@@ -321,10 +390,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e9e9ec',
   },
+  searchDisabled: {
+    opacity: 0.55,
+  },
   sortRow: {
     flexDirection: 'row',
     gap: 8,
     marginTop: 12,
+    flexWrap: 'wrap',
   },
   sortPill: {
     paddingHorizontal: 14,
@@ -360,6 +433,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#ebe9ff',
     borderColor: '#7c6cff',
   },
+  chipDisabled: {
+    opacity: 0.45,
+  },
   chipText: {
     fontSize: 13,
     fontWeight: '600',
@@ -368,6 +444,15 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: '#5b49f5',
+  },
+  chipTextDisabled: {
+    color: '#777',
+  },
+  helperText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
   },
   card: {
     backgroundColor: '#fff',
@@ -390,6 +475,23 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: '800',
     color: '#161616',
+  },
+  saveChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#f1f1f4',
+  },
+  saveChipActive: {
+    backgroundColor: '#ebe9ff',
+  },
+  saveChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#444',
+  },
+  saveChipTextActive: {
+    color: '#5b49f5',
   },
   cardExcerpt: {
     marginTop: 8,
@@ -429,25 +531,4 @@ const styles = StyleSheet.create({
     color: '#777',
     textAlign: 'center',
   },
-
-  saveChip: {
-  paddingHorizontal: 10,
-  paddingVertical: 6,
-  borderRadius: 999,
-  backgroundColor: '#f1f1f4',
-},
-
-saveChipActive: {
-  backgroundColor: '#ebe9ff',
-},
-
-saveChipText: {
-  fontSize: 12,
-  fontWeight: '700',
-  color: '#444',
-},
-
-saveChipTextActive: {
-  color: '#5b49f5',
-},
 });
