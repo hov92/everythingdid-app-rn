@@ -20,6 +20,7 @@ import {
   fetchTopicDetail,
   postReply,
   ReplyRow,
+  updateReply,
 } from "../../lib/api";
 import {
   pickSingleImage,
@@ -40,6 +41,7 @@ export default function ThreadDetailScreen() {
   const [replyText, setReplyText] = useState("");
   const [pickedImage, setPickedImage] = useState<PickedMedia | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+
   const [editingReplyId, setEditingReplyId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
 
@@ -48,6 +50,45 @@ export default function ThreadDetailScreen() {
     queryFn: () => fetchTopicDetail(topicId),
     enabled: !!topicId,
   });
+
+  async function refreshAll() {
+    await queryClient.invalidateQueries({
+      queryKey: ["thread-detail", topicId],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["topics"],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["following-topics"],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["saved-threads"],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["subscribed-threads"],
+    });
+  }
+
+  function patchReplyCountInLists(delta: number) {
+    const patchRows = (rows: any) => {
+      if (!Array.isArray(rows)) return rows;
+
+      return rows.map((row: any) => {
+        if (Number(row?.id) !== Number(topicId)) return row;
+
+        const current = Number(row?.replyCount ?? 0);
+        return {
+          ...row,
+          replyCount: Math.max(0, current + delta),
+        };
+      });
+    };
+
+    queryClient.setQueriesData({ queryKey: ["topics"] }, patchRows);
+    queryClient.setQueriesData({ queryKey: ["following-topics"] }, patchRows);
+    queryClient.setQueriesData({ queryKey: ["saved-threads"] }, patchRows);
+    queryClient.setQueriesData({ queryKey: ["subscribed-threads"] }, patchRows);
+  }
 
   const replyMutation = useMutation({
     mutationFn: async () => {
@@ -70,13 +111,8 @@ export default function ThreadDetailScreen() {
     onSuccess: async () => {
       setReplyText("");
       setPickedImage(null);
-
-      await queryClient.invalidateQueries({
-        queryKey: ["thread-detail", topicId],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["topics"],
-      });
+      patchReplyCountInLists(1);
+      await refreshAll();
     },
     onError: (e: any) => {
       setUploadingImage(false);
@@ -87,34 +123,35 @@ export default function ThreadDetailScreen() {
   const deleteMutation = useMutation({
     mutationFn: (replyId: number) => deleteReply(replyId),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["thread-detail", topicId],
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["topics"],
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["following-topics"],
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["saved-threads"],
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["subscribed-threads"],
-      });
+      patchReplyCountInLists(-1);
+      await refreshAll();
     },
     onError: (e: any) => {
       Alert.alert("Delete failed", e?.message || "Could not delete reply.");
     },
   });
 
+  const editMutation = useMutation({
+    mutationFn: () =>
+      updateReply({
+        replyId: editingReplyId!,
+        topicId,
+        content: editingText.trim(),
+      }),
+    onSuccess: async () => {
+      setEditingReplyId(null);
+      setEditingText("");
+      await refreshAll();
+    },
+    onError: (e: any) => {
+      Alert.alert("Edit failed", e?.message || "Could not update reply.");
+    },
+  });
+
   const detail = detailQuery.data;
   const busy = replyMutation.isPending || uploadingImage;
   const canReply = replyText.trim().length > 0 && !busy;
+  const canSaveEdit = editingText.trim().length > 0 && !editMutation.isPending;
 
   async function handlePickImage() {
     try {
@@ -141,7 +178,6 @@ export default function ThreadDetailScreen() {
     }
 
     if (!replyText.trim()) return;
-
     replyMutation.mutate();
   }
 
@@ -154,6 +190,21 @@ export default function ThreadDetailScreen() {
         onPress: () => deleteMutation.mutate(reply.id),
       },
     ]);
+  }
+
+  function startEditing(reply: ReplyRow) {
+    setEditingReplyId(reply.id);
+    setEditingText(reply.text);
+  }
+
+  function cancelEditing() {
+    setEditingReplyId(null);
+    setEditingText("");
+  }
+
+  function saveEdit() {
+    if (!editingReplyId || !editingText.trim()) return;
+    editMutation.mutate();
   }
 
   if (detailQuery.isLoading) {
@@ -189,22 +240,25 @@ export default function ThreadDetailScreen() {
         <FlatList
           data={detail.replies}
           keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => {
-            console.log("MY USER ID", userId);
-            console.log("REPLY AUTHOR ID", item.authorId, item.author, item.id);
-
-            return (
-              <ReplyCard
-                item={item}
-                canDelete={!!userId && Number(item.authorId) === Number(userId)}
-                deleting={
-                  deleteMutation.isPending &&
-                  deleteMutation.variables === item.id
-                }
-                onDelete={() => handleDeleteReply(item)}
-              />
-            );
-          }}
+          renderItem={({ item }) => (
+            <ReplyCard
+              item={item}
+              canManage={!!userId && Number(item.authorId) === Number(userId)}
+              deleting={
+                deleteMutation.isPending &&
+                deleteMutation.variables === item.id
+              }
+              editing={editingReplyId === item.id}
+              editingText={editingText}
+              editPending={editMutation.isPending}
+              canSaveEdit={canSaveEdit}
+              onDelete={() => handleDeleteReply(item)}
+              onStartEdit={() => startEditing(item)}
+              onCancelEdit={cancelEditing}
+              onSaveEdit={saveEdit}
+              onChangeEditText={setEditingText}
+            />
+          )}
           ListHeaderComponent={
             <View style={styles.headerWrap}>
               <Pressable onPress={() => router.back()} style={styles.backPill}>
@@ -220,7 +274,7 @@ export default function ThreadDetailScreen() {
                   <Text style={styles.metaText}>{formatTime(detail.time)}</Text>
                   <Text style={styles.metaDot}>•</Text>
                   <Text style={styles.metaText}>
-                    {detail.replyCount} replies
+                    {detail.replies.length} replies
                   </Text>
                 </View>
 
@@ -295,14 +349,30 @@ export default function ThreadDetailScreen() {
 
 function ReplyCard({
   item,
-  canDelete,
+  canManage,
   deleting,
+  editing,
+  editingText,
+  editPending,
+  canSaveEdit,
   onDelete,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onChangeEditText,
 }: {
   item: ReplyRow;
-  canDelete: boolean;
+  canManage: boolean;
   deleting: boolean;
+  editing: boolean;
+  editingText: string;
+  editPending: boolean;
+  canSaveEdit: boolean;
   onDelete: () => void;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
+  onChangeEditText: (value: string) => void;
 }) {
   return (
     <View style={styles.replyCard}>
@@ -313,16 +383,55 @@ function ReplyCard({
           <Text style={styles.metaText}>{formatTime(item.time)}</Text>
         </View>
 
-        {canDelete ? (
-          <Pressable onPress={onDelete} style={styles.deleteBtn}>
-            <Text style={styles.deleteBtnText}>
-              {deleting ? "Deleting..." : "Delete"}
-            </Text>
-          </Pressable>
+        {canManage ? (
+          <View style={styles.replyActionRow}>
+            {!editing ? (
+              <>
+                <Pressable onPress={onStartEdit} style={styles.editBtn}>
+                  <Text style={styles.editBtnText}>Edit</Text>
+                </Pressable>
+
+                <Pressable onPress={onDelete} style={styles.deleteBtn}>
+                  <Text style={styles.deleteBtnText}>
+                    {deleting ? "Deleting..." : "Delete"}
+                  </Text>
+                </Pressable>
+              </>
+            ) : null}
+          </View>
         ) : null}
       </View>
 
-      <Text style={styles.replyText}>{item.text}</Text>
+      {editing ? (
+        <>
+          <TextInput
+            value={editingText}
+            onChangeText={onChangeEditText}
+            multiline
+            style={styles.editInput}
+            placeholder="Edit your reply..."
+            placeholderTextColor="#8b8b8b"
+          />
+
+          <View style={styles.editActionsRow}>
+            <Pressable onPress={onCancelEdit} style={styles.cancelBtn}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={onSaveEdit}
+              style={[styles.saveBtn, !canSaveEdit && styles.saveBtnDisabled]}
+              disabled={!canSaveEdit}
+            >
+              <Text style={styles.saveBtnText}>
+                {editPending ? "Saving..." : "Save"}
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      ) : (
+        <Text style={styles.replyText}>{item.text}</Text>
+      )}
     </View>
   );
 }
@@ -451,6 +560,22 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     flex: 1,
   },
+  replyActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  editBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#e9f0fb",
+  },
+  editBtnText: {
+    color: "#175cd3",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   deleteBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -467,6 +592,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: "#333",
+  },
+  editInput: {
+    marginTop: 10,
+    minHeight: 90,
+    backgroundColor: "#f3f3f6",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#111",
+    textAlignVertical: "top",
+  },
+  editActionsRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 10,
+  },
+  cancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#ececf1",
+  },
+  cancelBtnText: {
+    color: "#333",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  saveBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#111",
+  },
+  saveBtnDisabled: {
+    opacity: 0.45,
+  },
+  saveBtnText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
   },
   empty: {
     paddingHorizontal: 24,

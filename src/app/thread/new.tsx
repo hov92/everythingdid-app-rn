@@ -36,6 +36,7 @@ export default function NewThreadScreen() {
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['topics'] });
+      await queryClient.invalidateQueries({ queryKey: ['following-topics'] });
       router.back();
     },
     onError: (e: any) => {
@@ -72,14 +73,20 @@ export default function NewThreadScreen() {
         <Text style={styles.title}>Create Thread</Text>
 
         <Text style={styles.label}>Category</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chips}
+        >
           {(forumsQuery.data ?? []).map((forum) => (
             <Pressable
               key={forum.id}
               onPress={() => setForumId(forum.id)}
               style={[styles.chip, forumId === forum.id && styles.chipActive]}
             >
-              <Text style={[styles.chipText, forumId === forum.id && styles.chipTextActive]}>
+              <Text
+                style={[styles.chipText, forumId === forum.id && styles.chipTextActive]}
+              >
                 {forum.title}
               </Text>
             </Pressable>

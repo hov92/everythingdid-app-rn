@@ -94,20 +94,8 @@ function fallbackAuthor(obj: any): string {
   return 'Unknown';
 }
 
-function pickReplyCount(obj: any): number {
-  return Number(
-    obj?.total_reply_count ??
-      obj?.reply_count ??
-      obj?.replies_count ??
-      obj?.total_replies ??
-      obj?.replies ??
-      0
-  );
-}
-
 export async function authedHeaders(): Promise<Record<string, string>> {
   const token = useAuthStore.getState().token;
-
   if (!token) return {};
 
   return {
@@ -177,21 +165,19 @@ async function fetchMemberMap(ids: number[]): Promise<Map<number, string>> {
   return map;
 }
 
-function mapTopicRow(t: any): SimpleTopicRow {
-  return {
-    id: Number(t?.id ?? 0),
-    title:
-      htmlToText(t?.title?.rendered ?? '') ||
-      String(t?.title ?? '') ||
-      'Untitled Thread',
-    excerpt:
-      htmlToText(t?.excerpt?.rendered ?? '') ||
-      htmlToText(t?.content?.rendered ?? '') ||
-      '',
-    author: fallbackAuthor(t),
-    time: String(t?.date ?? t?.modified ?? ''),
-    replyCount: pickReplyCount(t),
-  };
+async function fetchAccurateReplyCount(topicId: number): Promise<number> {
+  if (!topicId) return 0;
+
+  const repliesRaw = await apiGet(
+    `/reply?topic_id=${topicId}&per_page=100&order=asc`
+  ).catch(() => []);
+
+  const repliesArr = Array.isArray(repliesRaw) ? repliesRaw : [];
+
+  return repliesArr.filter((r: any) => {
+    const replyTopicId = Number(r?.topic_id ?? r?.parent?.id ?? r?.parent ?? 0);
+    return replyTopicId === topicId;
+  }).length;
 }
 
 export async function fetchForums(): Promise<ForumRow[]> {
@@ -232,7 +218,11 @@ export async function fetchTopics(params?: {
   const authorIds = arr.map((t: any) => pickAuthorId(t)).filter(Boolean);
   const memberMap = await fetchMemberMap(authorIds);
 
-  return arr.map((t: any) => {
+  const counts = await Promise.all(
+    arr.map((t: any) => fetchAccurateReplyCount(Number(t?.id ?? 0)))
+  );
+
+  return arr.map((t: any, index: number) => {
     const authorId = pickAuthorId(t);
 
     return {
@@ -250,7 +240,7 @@ export async function fetchTopics(params?: {
         memberMap.get(authorId) ||
         fallbackAuthor(t),
       time: String(t?.date ?? t?.modified ?? ''),
-      replyCount: pickReplyCount(t),
+      replyCount: counts[index] ?? 0,
       forumId: Number(t?.parent ?? 0),
     };
   });
@@ -350,7 +340,34 @@ export async function fetchSubscribedThreads(): Promise<SimpleTopicRow[]> {
     })
   );
 
-  return topics.filter(Boolean).map((t: any) => mapTopicRow(t));
+  const cleanTopics = topics.filter(Boolean);
+  const authorIds = cleanTopics.map((t: any) => pickAuthorId(t)).filter(Boolean);
+  const memberMap = await fetchMemberMap(authorIds);
+  const counts = await Promise.all(
+    cleanTopics.map((t: any) => fetchAccurateReplyCount(Number(t?.id ?? 0)))
+  );
+
+  return cleanTopics.map((t: any, index: number) => {
+    const authorId = pickAuthorId(t);
+
+    return {
+      id: Number(t?.id ?? 0),
+      title:
+        htmlToText(t?.title?.rendered ?? '') ||
+        String(t?.title ?? '') ||
+        'Untitled Thread',
+      excerpt:
+        htmlToText(t?.excerpt?.rendered ?? '') ||
+        htmlToText(t?.content?.rendered ?? '') ||
+        '',
+      author:
+        pickAuthorName(t) ||
+        memberMap.get(authorId) ||
+        fallbackAuthor(t),
+      time: String(t?.date ?? t?.modified ?? ''),
+      replyCount: counts[index] ?? 0,
+    };
+  });
 }
 
 export async function fetchTopicsByIds(ids: number[]): Promise<SimpleTopicRow[]> {
@@ -367,7 +384,34 @@ export async function fetchTopicsByIds(ids: number[]): Promise<SimpleTopicRow[]>
     })
   );
 
-  return topics.filter(Boolean).map((t: any) => mapTopicRow(t));
+  const cleanTopics = topics.filter(Boolean);
+  const authorIds = cleanTopics.map((t: any) => pickAuthorId(t)).filter(Boolean);
+  const memberMap = await fetchMemberMap(authorIds);
+  const counts = await Promise.all(
+    cleanTopics.map((t: any) => fetchAccurateReplyCount(Number(t?.id ?? 0)))
+  );
+
+  return cleanTopics.map((t: any, index: number) => {
+    const authorId = pickAuthorId(t);
+
+    return {
+      id: Number(t?.id ?? 0),
+      title:
+        htmlToText(t?.title?.rendered ?? '') ||
+        String(t?.title ?? '') ||
+        'Untitled Thread',
+      excerpt:
+        htmlToText(t?.excerpt?.rendered ?? '') ||
+        htmlToText(t?.content?.rendered ?? '') ||
+        '',
+      author:
+        pickAuthorName(t) ||
+        memberMap.get(authorId) ||
+        fallbackAuthor(t),
+      time: String(t?.date ?? t?.modified ?? ''),
+      replyCount: counts[index] ?? 0,
+    };
+  });
 }
 
 export async function postReply({
@@ -410,12 +454,15 @@ export async function deleteReply(replyId: number | string) {
 
 export async function updateReply({
   replyId,
+  topicId,
   content,
 }: {
   replyId: number | string;
+  topicId: number | string;
   content: string;
 }) {
   return apiPost(`/reply/${replyId}`, {
+    topic_id: Number(topicId),
     content: String(content).trim(),
   });
 }
