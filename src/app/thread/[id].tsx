@@ -21,6 +21,7 @@ import {
   markBestReply,
   postReply,
   ReplyRow,
+  toggleTopicSubscription,
   updateReply,
   votePost,
 } from "../../lib/api";
@@ -43,7 +44,6 @@ export default function ThreadDetailScreen() {
   const [replyText, setReplyText] = useState("");
   const [pickedImage, setPickedImage] = useState<PickedMedia | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-
   const [editingReplyId, setEditingReplyId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
 
@@ -153,15 +153,11 @@ export default function ThreadDetailScreen() {
   const voteMutation = useMutation({
     mutationFn: ({
       postId,
-      hasVoted,
+      direction,
     }: {
       postId: number;
-      hasVoted: boolean;
-    }) =>
-      votePost({
-        postId,
-        direction: hasVoted ? "remove" : "up",
-      }),
+      direction: "up" | "remove";
+    }) => votePost({ postId, direction }),
     onSuccess: async () => {
       await refreshAll();
     },
@@ -171,16 +167,32 @@ export default function ThreadDetailScreen() {
   });
 
   const bestMutation = useMutation({
-    mutationFn: (replyId: number) =>
-      markBestReply({
+    mutationFn: (replyId: number) => markBestReply({ topicId, replyId }),
+    onSuccess: async () => {
+      await refreshAll();
+    },
+    onError: (e: any) => {
+      Alert.alert(
+        "Best response failed",
+        e?.message || "Could not mark best response."
+      );
+    },
+  });
+
+  const subscribeMutation = useMutation({
+    mutationFn: (subscribe: boolean) =>
+      toggleTopicSubscription({
         topicId,
-        replyId,
+        subscribe,
       }),
     onSuccess: async () => {
       await refreshAll();
     },
     onError: (e: any) => {
-      Alert.alert("Best response failed", e?.message || "Could not mark best response.");
+      Alert.alert(
+        "Follow failed",
+        e?.message || "Could not update follow status."
+      );
     },
   });
 
@@ -188,7 +200,6 @@ export default function ThreadDetailScreen() {
   const busy = replyMutation.isPending || uploadingImage;
   const canReply = replyText.trim().length > 0 && !busy;
   const canSaveEdit = editingText.trim().length > 0 && !editMutation.isPending;
-  const canMarkBest = !!userId && Number(detail?.authorId ?? 0) === Number(userId);
 
   async function handlePickImage() {
     try {
@@ -222,11 +233,6 @@ export default function ThreadDetailScreen() {
     replyMutation.mutate();
   }
 
-  function handleVote(postId: number, hasVoted: boolean) {
-    if (!requireLogin()) return;
-    voteMutation.mutate({ postId, hasVoted });
-  }
-
   function handleDeleteReply(reply: ReplyRow) {
     Alert.alert("Delete reply", "Are you sure you want to delete this reply?", [
       { text: "Cancel", style: "cancel" },
@@ -253,9 +259,35 @@ export default function ThreadDetailScreen() {
     editMutation.mutate();
   }
 
-  function handleMarkBest(replyId: number) {
+  function handleVote(reply: ReplyRow) {
     if (!requireLogin()) return;
-    bestMutation.mutate(replyId);
+
+    voteMutation.mutate({
+      postId: reply.id,
+      direction: reply.viewerHasVoted ? "remove" : "up",
+    });
+  }
+
+  function handleVoteTopic() {
+    if (!detail) return;
+    if (!requireLogin()) return;
+
+    voteMutation.mutate({
+      postId: detail.id,
+      direction: detail.viewerHasVoted ? "remove" : "up",
+    });
+  }
+
+  function handleMarkBest(reply: ReplyRow) {
+    if (!requireLogin()) return;
+    bestMutation.mutate(reply.id);
+  }
+
+  function handleToggleFollow() {
+    if (!detail) return;
+    if (!requireLogin()) return;
+
+    subscribeMutation.mutate(!detail.subscribed);
   }
 
   if (detailQuery.isLoading) {
@@ -281,6 +313,8 @@ export default function ThreadDetailScreen() {
     );
   }
 
+  const canMarkBest = !!userId && Number(detail.authorId) === Number(userId);
+
   return (
     <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
@@ -300,6 +334,10 @@ export default function ThreadDetailScreen() {
                 deleteMutation.isPending &&
                 deleteMutation.variables === item.id
               }
+              editing={editingReplyId === item.id}
+              editingText={editingText}
+              editPending={editMutation.isPending}
+              canSaveEdit={canSaveEdit}
               voting={
                 voteMutation.isPending &&
                 voteMutation.variables?.postId === item.id
@@ -308,24 +346,43 @@ export default function ThreadDetailScreen() {
                 bestMutation.isPending &&
                 bestMutation.variables === item.id
               }
-              editing={editingReplyId === item.id}
-              editingText={editingText}
-              editPending={editMutation.isPending}
-              canSaveEdit={canSaveEdit}
               onDelete={() => handleDeleteReply(item)}
               onStartEdit={() => startEditing(item)}
               onCancelEdit={cancelEditing}
               onSaveEdit={saveEdit}
               onChangeEditText={setEditingText}
-              onVote={() => handleVote(item.id, !!item.viewerHasVoted)}
-              onMarkBest={() => handleMarkBest(item.id)}
+              onVote={() => handleVote(item)}
+              onMarkBest={() => handleMarkBest(item)}
             />
           )}
           ListHeaderComponent={
             <View style={styles.headerWrap}>
-              <Pressable onPress={() => router.back()} style={styles.backPill}>
-                <Text style={styles.backPillText}>Back</Text>
-              </Pressable>
+              <View style={styles.headerTopRow}>
+                <Pressable onPress={() => router.back()} style={styles.backPill}>
+                  <Text style={styles.backPillText}>Back</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={handleToggleFollow}
+                  style={[
+                    styles.followBtn,
+                    detail.subscribed && styles.followBtnActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.followBtnText,
+                      detail.subscribed && styles.followBtnTextActive,
+                    ]}
+                  >
+                    {subscribeMutation.isPending
+                      ? "Saving..."
+                      : detail.subscribed
+                      ? "Following"
+                      : "Follow"}
+                  </Text>
+                </Pressable>
+              </View>
 
               <View style={styles.opCard}>
                 <Text style={styles.title}>{detail.title}</Text>
@@ -344,7 +401,7 @@ export default function ThreadDetailScreen() {
 
                 <View style={styles.topicVoteRow}>
                   <Pressable
-                    onPress={() => handleVote(detail.id, !!detail.viewerHasVoted)}
+                    onPress={handleVoteTopic}
                     style={[
                       styles.voteBtn,
                       detail.viewerHasVoted && styles.voteBtnActive,
@@ -356,7 +413,10 @@ export default function ThreadDetailScreen() {
                         detail.viewerHasVoted && styles.voteBtnTextActive,
                       ]}
                     >
-                      ▲ {detail.voteCount ?? 0}
+                      {voteMutation.isPending &&
+                      voteMutation.variables?.postId === detail.id
+                        ? "Saving..."
+                        : `▲ ${detail.voteCount ?? 0}`}
                     </Text>
                   </Pressable>
                 </View>
@@ -433,12 +493,12 @@ function ReplyCard({
   canManage,
   canMarkBest,
   deleting,
-  voting,
-  markingBest,
   editing,
   editingText,
   editPending,
   canSaveEdit,
+  voting,
+  markingBest,
   onDelete,
   onStartEdit,
   onCancelEdit,
@@ -451,12 +511,12 @@ function ReplyCard({
   canManage: boolean;
   canMarkBest: boolean;
   deleting: boolean;
-  voting: boolean;
-  markingBest: boolean;
   editing: boolean;
   editingText: string;
   editPending: boolean;
   canSaveEdit: boolean;
+  voting: boolean;
+  markingBest: boolean;
   onDelete: () => void;
   onStartEdit: () => void;
   onCancelEdit: () => void;
@@ -467,12 +527,6 @@ function ReplyCard({
 }) {
   return (
     <View style={styles.replyCard}>
-      {item.isBestResponse ? (
-        <View style={styles.bestBadge}>
-          <Text style={styles.bestBadgeText}>Best Response</Text>
-        </View>
-      ) : null}
-
       <View style={styles.replyTopRow}>
         <View style={styles.replyMetaWrap}>
           <Text style={styles.metaTextStrong}>{item.author}</Text>
@@ -498,6 +552,12 @@ function ReplyCard({
           </View>
         ) : null}
       </View>
+
+      {item.isBestResponse ? (
+        <View style={styles.bestBadge}>
+          <Text style={styles.bestBadgeText}>Best Response</Text>
+        </View>
+      ) : null}
 
       {editing ? (
         <>
@@ -527,37 +587,35 @@ function ReplyCard({
           </View>
         </>
       ) : (
-        <>
-          <Text style={styles.replyText}>{item.text}</Text>
-
-          <View style={styles.replyFooterRow}>
-            <Pressable
-              onPress={onVote}
-              style={[
-                styles.voteBtn,
-                item.viewerHasVoted && styles.voteBtnActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.voteBtnText,
-                  item.viewerHasVoted && styles.voteBtnTextActive,
-                ]}
-              >
-                {voting ? "..." : `▲ ${item.voteCount ?? 0}`}
-              </Text>
-            </Pressable>
-
-            {canMarkBest && !item.isBestResponse ? (
-              <Pressable onPress={onMarkBest} style={styles.bestActionBtn}>
-                <Text style={styles.bestActionBtnText}>
-                  {markingBest ? "Saving..." : "Mark Best"}
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
-        </>
+        <Text style={styles.replyText}>{item.text}</Text>
       )}
+
+      <View style={styles.replyFooterRow}>
+        <Pressable
+          onPress={onVote}
+          style={[
+            styles.voteBtn,
+            item.viewerHasVoted && styles.voteBtnActive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.voteBtnText,
+              item.viewerHasVoted && styles.voteBtnTextActive,
+            ]}
+          >
+            {voting ? "Saving..." : `▲ ${item.voteCount ?? 0}`}
+          </Text>
+        </Pressable>
+
+        {canMarkBest && !item.isBestResponse ? (
+          <Pressable onPress={onMarkBest} style={styles.bestActionBtn}>
+            <Text style={styles.bestActionBtnText}>
+              {markingBest ? "Saving..." : "Mark Best"}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -606,17 +664,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
   },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 12,
+  },
   backPill: {
     alignSelf: "flex-start",
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 999,
     backgroundColor: "#ececf1",
-    marginBottom: 12,
   },
   backPillText: {
     color: "#111",
     fontWeight: "700",
+  },
+  followBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#ececf1",
+  },
+  followBtnActive: {
+    backgroundColor: "#ebe9ff",
+  },
+  followBtnText: {
+    color: "#333",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  followBtnTextActive: {
+    color: "#5b49f5",
   },
   opCard: {
     backgroundColor: "#fff",
@@ -678,19 +759,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ececf1",
   },
-  bestBadge: {
-    alignSelf: "flex-start",
-    marginBottom: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "#fff4d6",
-  },
-  bestBadgeText: {
-    color: "#9a6700",
-    fontSize: 12,
-    fontWeight: "700",
-  },
   replyTopRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -730,45 +798,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
+  bestBadge: {
+    alignSelf: "flex-start",
+    marginTop: 10,
+    marginBottom: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#fff4d6",
+  },
+  bestBadgeText: {
+    color: "#9a6700",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   replyText: {
     marginTop: 10,
     fontSize: 14,
     lineHeight: 21,
     color: "#333",
-  },
-  replyFooterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 12,
-  },
-  voteBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "#f1f1f4",
-  },
-  voteBtnActive: {
-    backgroundColor: "#ebe9ff",
-  },
-  voteBtnText: {
-    color: "#444",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  voteBtnTextActive: {
-    color: "#5b49f5",
-  },
-  bestActionBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "#e9f0fb",
-  },
-  bestActionBtnText: {
-    color: "#175cd3",
-    fontSize: 12,
-    fontWeight: "700",
   },
   editInput: {
     marginTop: 10,
@@ -809,6 +857,40 @@ const styles = StyleSheet.create({
   },
   saveBtnText: {
     color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  replyFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+  },
+  voteBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#f1f1f4",
+  },
+  voteBtnActive: {
+    backgroundColor: "#ebe9ff",
+  },
+  voteBtnText: {
+    color: "#444",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  voteBtnTextActive: {
+    color: "#5b49f5",
+  },
+  bestActionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#e9f0fb",
+  },
+  bestActionBtnText: {
+    color: "#175cd3",
     fontSize: 12,
     fontWeight: "700",
   },

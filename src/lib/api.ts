@@ -56,6 +56,7 @@ export type TopicDetail = {
   bestReplyId?: number;
   authorId?: number;
   replies: ReplyRow[];
+  subscribed?: boolean;
 };
 
 function htmlToText(html: string) {
@@ -322,6 +323,10 @@ export async function fetchTopicDetail(topicId: number | string): Promise<TopicD
     voteCount: Number(topic?.ed_vote_count ?? 0),
     viewerHasVoted: Boolean(topic?.ed_viewer_has_voted),
     bestReplyId: Number(topic?.ed_best_reply_id ?? 0) || undefined,
+    subscribed:
+  typeof topic?.action_states?.subscribed === 'boolean'
+    ? topic.action_states.subscribed
+    : false,
     replies: filteredReplies.map((r: any) => {
       const authorId = pickAuthorId(r);
 
@@ -537,4 +542,14 @@ export async function markBestReply({
   return edApiPost(`/topics/${topicId}/best-reply`, {
     reply_id: Number(replyId),
   });
+}
+
+export async function toggleTopicSubscription({
+  topicId,
+  subscribe,
+}: {
+  topicId: number | string;
+  subscribe: boolean;
+}) {
+  return apiPost(`/topics/${topicId}/${subscribe ? 'subscribe' : 'unsubscribe'}`, {});
 }
