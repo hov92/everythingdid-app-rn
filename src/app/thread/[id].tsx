@@ -1,19 +1,29 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
-import { fetchTopicDetail, ReplyRow } from '../../lib/api';
+import { fetchTopicDetail, postReply, ReplyRow } from '../../lib/api';
+import { useAuthStore } from '../../store/auth-store';
 
 export default function ThreadDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const topicId = Number(id ?? 0);
+
+  const token = useAuthStore((s) => s.token);
+  const queryClient = useQueryClient();
+
+  const [replyText, setReplyText] = useState('');
 
   const detailQuery = useQuery({
     queryKey: ['thread-detail', topicId],
@@ -21,7 +31,36 @@ export default function ThreadDetailScreen() {
     enabled: !!topicId,
   });
 
+  const replyMutation = useMutation({
+    mutationFn: () =>
+      postReply({
+        topicId,
+        content: replyText.trim(),
+      }),
+    onSuccess: async () => {
+      setReplyText('');
+      await queryClient.invalidateQueries({
+        queryKey: ['thread-detail', topicId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ['topics'],
+      });
+    },
+  });
+
   const detail = detailQuery.data;
+  const canReply = replyText.trim().length > 0 && !replyMutation.isPending;
+
+  function handleReply() {
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    if (!replyText.trim()) return;
+
+    replyMutation.mutate();
+  }
 
   if (detailQuery.isLoading) {
     return (
@@ -47,42 +86,71 @@ export default function ThreadDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <FlatList
-        data={detail.replies}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => <ReplyCard item={item} />}
-        ListHeaderComponent={
-          <View style={styles.headerWrap}>
-            <Pressable onPress={() => router.back()} style={styles.backPill}>
-              <Text style={styles.backPillText}>Back</Text>
-            </Pressable>
+    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.screen}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={8}
+      >
+        <FlatList
+          data={detail.replies}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={({ item }) => <ReplyCard item={item} />}
+          ListHeaderComponent={
+            <View style={styles.headerWrap}>
+              <Pressable onPress={() => router.back()} style={styles.backPill}>
+                <Text style={styles.backPillText}>Back</Text>
+              </Pressable>
 
-            <View style={styles.opCard}>
-              <Text style={styles.title}>{detail.title}</Text>
+              <View style={styles.opCard}>
+                <Text style={styles.title}>{detail.title}</Text>
 
-              <View style={styles.metaRow}>
-                <Text style={styles.metaText}>{detail.author}</Text>
-                <Text style={styles.metaDot}>•</Text>
-                <Text style={styles.metaText}>{formatTime(detail.time)}</Text>
-                <Text style={styles.metaDot}>•</Text>
-                <Text style={styles.metaText}>{detail.replyCount} replies</Text>
+                <View style={styles.metaRow}>
+                  <Text style={styles.metaText}>{detail.author}</Text>
+                  <Text style={styles.metaDot}>•</Text>
+                  <Text style={styles.metaText}>{formatTime(detail.time)}</Text>
+                  <Text style={styles.metaDot}>•</Text>
+                  <Text style={styles.metaText}>{detail.replyCount} replies</Text>
+                </View>
+
+                <Text style={styles.content}>{detail.content}</Text>
               </View>
 
-              <Text style={styles.content}>{detail.content}</Text>
+              <Text style={styles.replyHeader}>Replies</Text>
             </View>
+          }
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>No replies yet</Text>
+              <Text style={styles.emptyText}>This thread has no replies yet.</Text>
+            </View>
+          }
+          contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
+        />
 
-            <Text style={styles.replyHeader}>Replies</Text>
-          </View>
-        }
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No replies yet</Text>
-            <Text style={styles.emptyText}>This thread has no replies yet.</Text>
-          </View>
-        }
-        contentContainerStyle={styles.listContent}
-      />
+        <View style={styles.replyBar}>
+          <TextInput
+            value={replyText}
+            onChangeText={setReplyText}
+            placeholder={token ? 'Write a reply...' : 'Log in to reply...'}
+            placeholderTextColor="#8b8b8b"
+            style={styles.replyInput}
+            multiline
+            editable={!replyMutation.isPending}
+          />
+
+          <Pressable
+            onPress={handleReply}
+            style={[styles.replyBtn, !canReply && styles.replyBtnDisabled]}
+            disabled={!canReply && !!token}
+          >
+            <Text style={styles.replyBtnText}>
+              {replyMutation.isPending ? 'Posting...' : 'Post'}
+            </Text>
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -139,7 +207,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   listContent: {
-    paddingBottom: 28,
+    paddingBottom: 110,
   },
   headerWrap: {
     paddingHorizontal: 16,
@@ -234,5 +302,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#777',
     textAlign: 'center',
+  },
+  replyBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-end',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 18 : 12,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#ececf1',
+  },
+  replyInput: {
+    flex: 1,
+    minHeight: 46,
+    maxHeight: 110,
+    backgroundColor: '#f3f3f6',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#111',
+  },
+  replyBtn: {
+    height: 46,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    backgroundColor: '#111',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  replyBtnDisabled: {
+    opacity: 0.45,
+  },
+  replyBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
