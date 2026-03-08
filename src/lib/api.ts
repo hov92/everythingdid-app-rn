@@ -31,6 +31,7 @@ export type ReplyRow = {
   text: string;
   author: string;
   time: string;
+  authorId?: number;
 };
 
 export type TopicDetail = {
@@ -93,6 +94,17 @@ function fallbackAuthor(obj: any): string {
   return 'Unknown';
 }
 
+function pickReplyCount(obj: any): number {
+  return Number(
+    obj?.total_reply_count ??
+      obj?.reply_count ??
+      obj?.replies_count ??
+      obj?.total_replies ??
+      obj?.replies ??
+      0
+  );
+}
+
 export async function authedHeaders(): Promise<Record<string, string>> {
   const token = useAuthStore.getState().token;
 
@@ -138,7 +150,7 @@ async function apiPost(path: string, payload: Record<string, any>) {
 }
 
 async function fetchMemberMap(ids: number[]): Promise<Map<number, string>> {
-  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  const uniqueIds = [...new Set(ids.filter((id) => Number(id) > 0))];
   const map = new Map<number, string>();
 
   await Promise.all(
@@ -156,13 +168,30 @@ async function fetchMemberMap(ids: number[]): Promise<Map<number, string>> {
         if (name) {
           map.set(id, name);
         }
-      } catch (e) {
-        console.log('member lookup failed for id', id, e);
+      } catch {
+        // Ignore invalid or non-member IDs
       }
     })
   );
 
   return map;
+}
+
+function mapTopicRow(t: any): SimpleTopicRow {
+  return {
+    id: Number(t?.id ?? 0),
+    title:
+      htmlToText(t?.title?.rendered ?? '') ||
+      String(t?.title ?? '') ||
+      'Untitled Thread',
+    excerpt:
+      htmlToText(t?.excerpt?.rendered ?? '') ||
+      htmlToText(t?.content?.rendered ?? '') ||
+      '',
+    author: fallbackAuthor(t),
+    time: String(t?.date ?? t?.modified ?? ''),
+    replyCount: pickReplyCount(t),
+  };
 }
 
 export async function fetchForums(): Promise<ForumRow[]> {
@@ -221,7 +250,7 @@ export async function fetchTopics(params?: {
         memberMap.get(authorId) ||
         fallbackAuthor(t),
       time: String(t?.date ?? t?.modified ?? ''),
-      replyCount: Number(t?.reply_count ?? t?.replies ?? 0),
+      replyCount: pickReplyCount(t),
       forumId: Number(t?.parent ?? 0),
     };
   });
@@ -263,7 +292,7 @@ export async function fetchTopicDetail(topicId: number | string): Promise<TopicD
       memberMap.get(topicAuthorId) ||
       fallbackAuthor(topic),
     time: String(topic?.date ?? topic?.modified ?? ''),
-    replyCount: Number(topic?.reply_count ?? filteredReplies.length ?? 0),
+    replyCount: filteredReplies.length,
     replies: filteredReplies.map((r: any) => {
       const authorId = pickAuthorId(r);
 
@@ -278,6 +307,7 @@ export async function fetchTopicDetail(topicId: number | string): Promise<TopicD
           memberMap.get(authorId) ||
           fallbackAuthor(r),
         time: String(r?.date ?? r?.modified ?? ''),
+        authorId,
       };
     }),
   };
@@ -298,23 +328,6 @@ export async function createThread({
     content,
     status: 'publish',
   });
-}
-
-function mapTopicRow(t: any): SimpleTopicRow {
-  return {
-    id: Number(t?.id ?? 0),
-    title:
-      htmlToText(t?.title?.rendered ?? '') ||
-      String(t?.title ?? '') ||
-      'Untitled Thread',
-    excerpt:
-      htmlToText(t?.excerpt?.rendered ?? '') ||
-      htmlToText(t?.content?.rendered ?? '') ||
-      '',
-    author: fallbackAuthor(t),
-    time: String(t?.date ?? t?.modified ?? ''),
-    replyCount: Number(t?.reply_count ?? t?.replies ?? 0),
-  };
 }
 
 export async function fetchSubscribedThreads(): Promise<SimpleTopicRow[]> {
@@ -376,4 +389,33 @@ export async function postReply({
   }
 
   return apiPost('/reply', payload);
+}
+
+export async function deleteReply(replyId: number | string) {
+  const res = await fetch(`${API_BASE}/reply/${replyId}`, {
+    method: 'DELETE',
+    headers: {
+      ...(await authedHeaders()),
+    },
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || 'Could not delete reply.');
+  }
+
+  return raw;
+}
+
+export async function updateReply({
+  replyId,
+  content,
+}: {
+  replyId: number | string;
+  content: string;
+}) {
+  return apiPost(`/reply/${replyId}`, {
+    content: String(content).trim(),
+  });
 }

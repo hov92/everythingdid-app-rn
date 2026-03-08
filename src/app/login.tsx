@@ -41,7 +41,13 @@ export default function LoginScreen() {
         throw new Error(raw?.message || 'Login failed.');
       }
 
-      setAuth(raw.token, raw.user_display_name || username.trim());
+      console.log('LOGIN RESPONSE', raw);
+      await setAuth(
+  raw.token,
+  raw.user_display_name || raw.user_nicename || username.trim(),
+  Number(raw.store_id ?? raw.user_id ?? 0) || null
+);
+
       router.back();
     } catch (e: any) {
       Alert.alert('Login failed', e?.message || 'Could not log in.');
@@ -84,9 +90,20 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  wrap: { padding: 24, gap: 12 },
-  title: { fontSize: 30, fontWeight: '800', color: '#111', marginBottom: 8 },
+  screen: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  wrap: {
+    padding: 24,
+    gap: 12,
+  },
+  title: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#111',
+    marginBottom: 8,
+  },
   input: {
     backgroundColor: '#f3f3f6',
     borderRadius: 14,
@@ -101,6 +118,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  btnDisabled: { opacity: 0.6 },
-  btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  btnDisabled: {
+    opacity: 0.6,
+  },
+  btnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
 });

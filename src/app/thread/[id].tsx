@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { router, useLocalSearchParams } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -13,33 +14,37 @@ import {
   Text,
   TextInput,
   View,
-} from 'react-native';
+} from "react-native";
 import {
+  deleteReply,
   fetchTopicDetail,
   postReply,
   ReplyRow,
-} from '../../lib/api';
+} from "../../lib/api";
 import {
   pickSingleImage,
   takePhoto,
   uploadWpMedia,
   PickedMedia,
-} from '../../lib/media';
-import { useAuthStore } from '../../store/auth-store';
+} from "../../lib/media";
+import { useAuthStore } from "../../store/auth-store";
 
 export default function ThreadDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const topicId = Number(id ?? 0);
 
   const token = useAuthStore((s) => s.token);
+  const userId = useAuthStore((s) => s.userId);
   const queryClient = useQueryClient();
 
-  const [replyText, setReplyText] = useState('');
+  const [replyText, setReplyText] = useState("");
   const [pickedImage, setPickedImage] = useState<PickedMedia | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [editingReplyId, setEditingReplyId] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   const detailQuery = useQuery({
-    queryKey: ['thread-detail', topicId],
+    queryKey: ["thread-detail", topicId],
     queryFn: () => fetchTopicDetail(topicId),
     enabled: !!topicId,
   });
@@ -63,17 +68,47 @@ export default function ThreadDetailScreen() {
       });
     },
     onSuccess: async () => {
-      setReplyText('');
+      setReplyText("");
       setPickedImage(null);
+
       await queryClient.invalidateQueries({
-        queryKey: ['thread-detail', topicId],
+        queryKey: ["thread-detail", topicId],
       });
       await queryClient.invalidateQueries({
-        queryKey: ['topics'],
+        queryKey: ["topics"],
       });
     },
-    onError: () => {
+    onError: (e: any) => {
       setUploadingImage(false);
+      Alert.alert("Reply failed", e?.message || "Could not post reply.");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (replyId: number) => deleteReply(replyId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["thread-detail", topicId],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["topics"],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["following-topics"],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["saved-threads"],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["subscribed-threads"],
+      });
+    },
+    onError: (e: any) => {
+      Alert.alert("Delete failed", e?.message || "Could not delete reply.");
     },
   });
 
@@ -86,7 +121,7 @@ export default function ThreadDetailScreen() {
       const file = await pickSingleImage();
       if (file) setPickedImage(file);
     } catch (e) {
-      console.log('pick image failed', e);
+      console.log("pick image failed", e);
     }
   }
 
@@ -95,19 +130,30 @@ export default function ThreadDetailScreen() {
       const file = await takePhoto();
       if (file) setPickedImage(file);
     } catch (e) {
-      console.log('take photo failed', e);
+      console.log("take photo failed", e);
     }
   }
 
   function handleReply() {
     if (!token) {
-      router.push('/login');
+      router.push("/login");
       return;
     }
 
     if (!replyText.trim()) return;
 
     replyMutation.mutate();
+  }
+
+  function handleDeleteReply(reply: ReplyRow) {
+    Alert.alert("Delete reply", "Are you sure you want to delete this reply?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => deleteMutation.mutate(reply.id),
+      },
+    ]);
   }
 
   if (detailQuery.isLoading) {
@@ -134,16 +180,31 @@ export default function ThreadDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
         style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={8}
       >
         <FlatList
           data={detail.replies}
           keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => <ReplyCard item={item} />}
+          renderItem={({ item }) => {
+            console.log("MY USER ID", userId);
+            console.log("REPLY AUTHOR ID", item.authorId, item.author, item.id);
+
+            return (
+              <ReplyCard
+                item={item}
+                canDelete={!!userId && Number(item.authorId) === Number(userId)}
+                deleting={
+                  deleteMutation.isPending &&
+                  deleteMutation.variables === item.id
+                }
+                onDelete={() => handleDeleteReply(item)}
+              />
+            );
+          }}
           ListHeaderComponent={
             <View style={styles.headerWrap}>
               <Pressable onPress={() => router.back()} style={styles.backPill}>
@@ -158,7 +219,9 @@ export default function ThreadDetailScreen() {
                   <Text style={styles.metaDot}>•</Text>
                   <Text style={styles.metaText}>{formatTime(detail.time)}</Text>
                   <Text style={styles.metaDot}>•</Text>
-                  <Text style={styles.metaText}>{detail.replyCount} replies</Text>
+                  <Text style={styles.metaText}>
+                    {detail.replyCount} replies
+                  </Text>
                 </View>
 
                 <Text style={styles.content}>{detail.content}</Text>
@@ -170,7 +233,9 @@ export default function ThreadDetailScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No replies yet</Text>
-              <Text style={styles.emptyText}>This thread has no replies yet.</Text>
+              <Text style={styles.emptyText}>
+                This thread has no replies yet.
+              </Text>
             </View>
           }
           contentContainerStyle={styles.listContent}
@@ -180,7 +245,10 @@ export default function ThreadDetailScreen() {
         <View style={styles.replyBar}>
           {pickedImage ? (
             <View style={styles.previewWrap}>
-              <Image source={{ uri: pickedImage.uri }} style={styles.previewImage} />
+              <Image
+                source={{ uri: pickedImage.uri }}
+                style={styles.previewImage}
+              />
               <Pressable
                 onPress={() => setPickedImage(null)}
                 style={styles.removePreviewBtn}
@@ -202,7 +270,7 @@ export default function ThreadDetailScreen() {
             <TextInput
               value={replyText}
               onChangeText={setReplyText}
-              placeholder={token ? 'Write a reply...' : 'Log in to reply...'}
+              placeholder={token ? "Write a reply..." : "Log in to reply..."}
               placeholderTextColor="#8b8b8b"
               style={styles.replyInput}
               multiline
@@ -215,7 +283,7 @@ export default function ThreadDetailScreen() {
               disabled={!canReply && !!token}
             >
               <Text style={styles.replyBtnText}>
-                {busy ? 'Posting...' : 'Post'}
+                {busy ? "Posting..." : "Post"}
               </Text>
             </Pressable>
           </View>
@@ -225,13 +293,33 @@ export default function ThreadDetailScreen() {
   );
 }
 
-function ReplyCard({ item }: { item: ReplyRow }) {
+function ReplyCard({
+  item,
+  canDelete,
+  deleting,
+  onDelete,
+}: {
+  item: ReplyRow;
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: () => void;
+}) {
   return (
     <View style={styles.replyCard}>
-      <View style={styles.metaRow}>
-        <Text style={styles.metaTextStrong}>{item.author}</Text>
-        <Text style={styles.metaDot}>•</Text>
-        <Text style={styles.metaText}>{formatTime(item.time)}</Text>
+      <View style={styles.replyTopRow}>
+        <View style={styles.replyMetaWrap}>
+          <Text style={styles.metaTextStrong}>{item.author}</Text>
+          <Text style={styles.metaDot}>•</Text>
+          <Text style={styles.metaText}>{formatTime(item.time)}</Text>
+        </View>
+
+        {canDelete ? (
+          <Pressable onPress={onDelete} style={styles.deleteBtn}>
+            <Text style={styles.deleteBtnText}>
+              {deleting ? "Deleting..." : "Delete"}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <Text style={styles.replyText}>{item.text}</Text>
@@ -240,41 +328,41 @@ function ReplyCard({ item }: { item: ReplyRow }) {
 }
 
 function formatTime(value: string) {
-  if (!value) return 'Now';
+  if (!value) return "Now";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
 
   return d.toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
+    month: "short",
+    day: "numeric",
   });
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f6f6f7',
+    backgroundColor: "#f6f6f7",
   },
   centerState: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 24,
   },
   errorText: {
     fontSize: 16,
-    color: '#333',
+    color: "#333",
   },
   backBtn: {
     marginTop: 12,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: '#111',
+    backgroundColor: "#111",
   },
   backBtnText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: "#fff",
+    fontWeight: "700",
   },
   listContent: {
     paddingBottom: 150,
@@ -284,106 +372,129 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   backPill: {
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: '#ececf1',
+    backgroundColor: "#ececf1",
     marginBottom: 12,
   },
   backPillText: {
-    color: '#111',
-    fontWeight: '700',
+    color: "#111",
+    fontWeight: "700",
   },
   opCard: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#ececf1',
+    borderColor: "#ececf1",
   },
   title: {
     fontSize: 24,
     lineHeight: 30,
-    fontWeight: '800',
-    color: '#161616',
+    fontWeight: "800",
+    color: "#161616",
   },
   metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
     marginTop: 10,
   },
   metaText: {
     fontSize: 12,
-    color: '#707070',
-    fontWeight: '500',
+    color: "#707070",
+    fontWeight: "500",
   },
   metaTextStrong: {
     fontSize: 12,
-    color: '#333',
-    fontWeight: '700',
+    color: "#333",
+    fontWeight: "700",
   },
   metaDot: {
     fontSize: 12,
-    color: '#a0a0a0',
+    color: "#a0a0a0",
     marginHorizontal: 6,
   },
   content: {
     marginTop: 14,
     fontSize: 15,
     lineHeight: 23,
-    color: '#333',
+    color: "#333",
   },
   replyHeader: {
     marginTop: 18,
     marginBottom: 8,
     fontSize: 18,
-    fontWeight: '800',
-    color: '#111',
+    fontWeight: "800",
+    color: "#111",
   },
   replyCard: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     marginHorizontal: 16,
     marginTop: 10,
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#ececf1',
+    borderColor: "#ececf1",
+  },
+  replyTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  replyMetaWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    flex: 1,
+  },
+  deleteBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#fbe9e9",
+  },
+  deleteBtnText: {
+    color: "#b42318",
+    fontSize: 12,
+    fontWeight: "700",
   },
   replyText: {
     marginTop: 10,
     fontSize: 14,
     lineHeight: 21,
-    color: '#333',
+    color: "#333",
   },
   empty: {
     paddingHorizontal: 24,
     paddingTop: 32,
-    alignItems: 'center',
+    alignItems: "center",
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '800',
-    color: '#222',
+    fontWeight: "800",
+    color: "#222",
   },
   emptyText: {
     marginTop: 8,
     fontSize: 14,
-    color: '#777',
-    textAlign: 'center',
+    color: "#777",
+    textAlign: "center",
   },
   replyBar: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
     paddingHorizontal: 14,
     paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 18 : 12,
-    backgroundColor: '#fff',
+    paddingBottom: Platform.OS === "ios" ? 18 : 12,
+    backgroundColor: "#fff",
     borderTopWidth: 1,
-    borderTopColor: '#ececf1',
+    borderTopColor: "#ececf1",
   },
   previewWrap: {
     marginBottom: 10,
@@ -392,33 +503,33 @@ const styles = StyleSheet.create({
     width: 110,
     height: 110,
     borderRadius: 14,
-    backgroundColor: '#eee',
+    backgroundColor: "#eee",
   },
   removePreviewBtn: {
     marginTop: 8,
-    alignSelf: 'flex-start',
-    backgroundColor: '#ececf1',
+    alignSelf: "flex-start",
+    backgroundColor: "#ececf1",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
   },
   removePreviewText: {
-    color: '#111',
-    fontWeight: '700',
+    color: "#111",
+    fontWeight: "700",
     fontSize: 12,
   },
   replyControls: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
-    alignItems: 'flex-end',
+    alignItems: "flex-end",
   },
   mediaBtn: {
     width: 42,
     height: 46,
     borderRadius: 14,
-    backgroundColor: '#f1f1f4',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#f1f1f4",
+    justifyContent: "center",
+    alignItems: "center",
   },
   mediaBtnText: {
     fontSize: 18,
@@ -427,27 +538,27 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 46,
     maxHeight: 110,
-    backgroundColor: '#f3f3f6',
+    backgroundColor: "#f3f3f6",
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: '#111',
+    color: "#111",
   },
   replyBtn: {
     height: 46,
     paddingHorizontal: 18,
     borderRadius: 14,
-    backgroundColor: '#111',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#111",
+    justifyContent: "center",
+    alignItems: "center",
   },
   replyBtnDisabled: {
     opacity: 0.45,
   },
   replyBtnText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: "#fff",
+    fontWeight: "700",
     fontSize: 14,
   },
 });
