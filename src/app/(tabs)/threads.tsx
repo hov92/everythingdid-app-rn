@@ -43,15 +43,24 @@ export default function ThreadsScreen() {
     () => (
       <View style={styles.headerWrap}>
         <View style={styles.topRow}>
-          <Text style={styles.title}>Threads</Text>
+  <Text style={styles.title}>Threads</Text>
 
-          <Pressable
-            style={styles.newBtn}
-            onPress={() => router.push('/thread/new')}
-          >
-            <Text style={styles.newBtnText}>New</Text>
-          </Pressable>
-        </View>
+  <View style={{ flexDirection: 'row', gap: 8 }}>
+    <Pressable
+      style={styles.loginBtn}
+      onPress={() => router.push('/login')}
+    >
+      <Text style={styles.loginBtnText}>Log in</Text>
+    </Pressable>
+
+    <Pressable
+      style={styles.newBtn}
+      onPress={() => router.push('/thread/new')}
+    >
+      <Text style={styles.newBtnText}>New</Text>
+    </Pressable>
+  </View>
+</View>
 
         <TextInput
           value={search}
@@ -356,4 +365,17 @@ const styles = StyleSheet.create({
     color: '#777',
     textAlign: 'center',
   },
+  loginBtn: {
+  paddingHorizontal: 14,
+  paddingVertical: 10,
+  borderRadius: 999,
+  backgroundColor: '#ececf1',
+  marginLeft: 8,
+},
+
+loginBtnText: {
+  color: '#111',
+  fontSize: 14,
+  fontWeight: '700',
+},
 });

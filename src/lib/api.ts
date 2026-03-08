@@ -49,6 +49,41 @@ function htmlToText(html: string) {
     .trim();
 }
 
+function pickAuthorName(obj: any): string {
+  return String(
+    obj?.author_name ??
+      obj?.display_name ??
+      obj?.topic_author ??
+      obj?.reply_author ??
+      obj?.author?.name ??
+      obj?.author?.display_name ??
+      obj?.user_data?.name ??
+      obj?.user_name ??
+      obj?._embedded?.author?.[0]?.name ??
+      ''
+  ).trim();
+}
+
+function pickAuthorId(obj: any): number {
+  return Number(
+    obj?.author_id ??
+      obj?.author ??
+      obj?.user_id ??
+      obj?.poster_id ??
+      0
+  );
+}
+
+function fallbackAuthor(obj: any): string {
+  const name = pickAuthorName(obj);
+  if (name) return name;
+
+  const id = pickAuthorId(obj);
+  if (id) return `User ${id}`;
+
+  return 'Unknown';
+}
+
 export async function authedHeaders(): Promise<Record<string, string>> {
   const token = useAuthStore.getState().token;
 
@@ -93,6 +128,34 @@ async function apiPost(path: string, payload: Record<string, any>) {
   return raw;
 }
 
+async function fetchMemberMap(ids: number[]): Promise<Map<number, string>> {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  const map = new Map<number, string>();
+
+  await Promise.all(
+    uniqueIds.map(async (id) => {
+      try {
+        const member = await apiGet(`/members/${id}`);
+        const name = String(
+          member?.name ??
+            member?.display_name ??
+            member?.user?.name ??
+            member?.user?.display_name ??
+            ''
+        ).trim();
+
+        if (name) {
+          map.set(id, name);
+        }
+      } catch (e) {
+        console.log('member lookup failed for id', id, e);
+      }
+    })
+  );
+
+  return map;
+}
+
 export async function fetchForums(): Promise<ForumRow[]> {
   const raw = await apiGet('/forums?per_page=50');
   const arr = Array.isArray(raw) ? raw : [];
@@ -128,35 +191,38 @@ export async function fetchTopics(params?: {
   const raw = await apiGet(`/topics?${qs.toString()}`);
   const arr = Array.isArray(raw) ? raw : [];
 
-  return arr.map((t: any) => ({
-    id: Number(t?.id ?? 0),
-    title:
-      htmlToText(t?.title?.rendered ?? '') ||
-      String(t?.title ?? '') ||
-      'Untitled Thread',
-    excerpt:
-      htmlToText(t?.excerpt?.rendered ?? '') ||
-      htmlToText(t?.content?.rendered ?? '') ||
-      '',
-    author: String(
-      t?.author_name ??
-        t?.author?.name ??
-        t?._embedded?.author?.[0]?.name ??
-        t?.topic_author ??
-        t?.display_name ??
-        'Unknown'
-    ),
-    time: String(t?.date ?? t?.modified ?? ''),
-    replyCount: Number(t?.reply_count ?? t?.replies ?? 0),
-    forumId: Number(t?.parent ?? 0),
-  }));
+  const authorIds = arr.map((t: any) => pickAuthorId(t)).filter(Boolean);
+  const memberMap = await fetchMemberMap(authorIds);
+
+  return arr.map((t: any) => {
+    const authorId = pickAuthorId(t);
+
+    return {
+      id: Number(t?.id ?? 0),
+      title:
+        htmlToText(t?.title?.rendered ?? '') ||
+        String(t?.title ?? '') ||
+        'Untitled Thread',
+      excerpt:
+        htmlToText(t?.excerpt?.rendered ?? '') ||
+        htmlToText(t?.content?.rendered ?? '') ||
+        '',
+      author:
+        pickAuthorName(t) ||
+        memberMap.get(authorId) ||
+        fallbackAuthor(t),
+      time: String(t?.date ?? t?.modified ?? ''),
+      replyCount: Number(t?.reply_count ?? t?.replies ?? 0),
+      forumId: Number(t?.parent ?? 0),
+    };
+  });
 }
 
 export async function fetchTopicDetail(topicId: number | string): Promise<TopicDetail> {
   const topic = await apiGet(`/topics/${topicId}`);
-  const repliesRaw = await apiGet(`/reply?topic_id=${topicId}&per_page=100&order=asc`).catch(
-    () => []
-  );
+  const repliesRaw = await apiGet(
+    `/reply?topic_id=${topicId}&per_page=100&order=asc`
+  ).catch(() => []);
 
   const repliesArr = Array.isArray(repliesRaw) ? repliesRaw : [];
 
@@ -164,6 +230,14 @@ export async function fetchTopicDetail(topicId: number | string): Promise<TopicD
     const replyTopicId = Number(r?.topic_id ?? r?.parent?.id ?? r?.parent ?? 0);
     return replyTopicId === Number(topicId);
   });
+
+  const authorIds = [
+    pickAuthorId(topic),
+    ...filteredReplies.map((r: any) => pickAuthorId(r)),
+  ].filter(Boolean);
+
+  const memberMap = await fetchMemberMap(authorIds);
+  const topicAuthorId = pickAuthorId(topic);
 
   return {
     id: Number(topic?.id ?? 0),
@@ -175,28 +249,28 @@ export async function fetchTopicDetail(topicId: number | string): Promise<TopicD
       htmlToText(topic?.content?.rendered ?? '') ||
       htmlToText(topic?.content?.raw ?? '') ||
       '',
-    author: String(
-      topic?.author_name ??
-        topic?.author?.name ??
-        topic?.topic_author ??
-        'Unknown'
-    ),
+    author:
+      pickAuthorName(topic) ||
+      memberMap.get(topicAuthorId) ||
+      fallbackAuthor(topic),
     time: String(topic?.date ?? topic?.modified ?? ''),
     replyCount: Number(topic?.reply_count ?? filteredReplies.length ?? 0),
-    replies: filteredReplies.map((r: any) => ({
-      id: Number(r?.id ?? 0),
-      text:
-        htmlToText(r?.content?.rendered ?? '') ||
-        htmlToText(r?.content?.raw ?? '') ||
-        '',
-      author: String(
-        r?.author_name ??
-          r?.author?.name ??
-          r?.display_name ??
-          'Unknown'
-      ),
-      time: String(r?.date ?? r?.modified ?? ''),
-    })),
+    replies: filteredReplies.map((r: any) => {
+      const authorId = pickAuthorId(r);
+
+      return {
+        id: Number(r?.id ?? 0),
+        text:
+          htmlToText(r?.content?.rendered ?? '') ||
+          htmlToText(r?.content?.raw ?? '') ||
+          '',
+        author:
+          pickAuthorName(r) ||
+          memberMap.get(authorId) ||
+          fallbackAuthor(r),
+        time: String(r?.date ?? r?.modified ?? ''),
+      };
+    }),
   };
 }
 
@@ -232,7 +306,7 @@ export async function postReply({
   };
 
   if (mediaIds.length) {
-    payload['bbp_media'] = mediaIds;
+    payload.bbp_media = mediaIds;
   }
 
   return apiPost('/reply', payload);
