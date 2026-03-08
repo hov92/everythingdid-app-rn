@@ -18,9 +18,11 @@ import {
 import {
   deleteReply,
   fetchTopicDetail,
+  markBestReply,
   postReply,
   ReplyRow,
   updateReply,
+  votePost,
 } from "../../lib/api";
 import {
   pickSingleImage,
@@ -148,10 +150,45 @@ export default function ThreadDetailScreen() {
     },
   });
 
+  const voteMutation = useMutation({
+    mutationFn: ({
+      postId,
+      hasVoted,
+    }: {
+      postId: number;
+      hasVoted: boolean;
+    }) =>
+      votePost({
+        postId,
+        direction: hasVoted ? "remove" : "up",
+      }),
+    onSuccess: async () => {
+      await refreshAll();
+    },
+    onError: (e: any) => {
+      Alert.alert("Vote failed", e?.message || "Could not update vote.");
+    },
+  });
+
+  const bestMutation = useMutation({
+    mutationFn: (replyId: number) =>
+      markBestReply({
+        topicId,
+        replyId,
+      }),
+    onSuccess: async () => {
+      await refreshAll();
+    },
+    onError: (e: any) => {
+      Alert.alert("Best response failed", e?.message || "Could not mark best response.");
+    },
+  });
+
   const detail = detailQuery.data;
   const busy = replyMutation.isPending || uploadingImage;
   const canReply = replyText.trim().length > 0 && !busy;
   const canSaveEdit = editingText.trim().length > 0 && !editMutation.isPending;
+  const canMarkBest = !!userId && Number(detail?.authorId ?? 0) === Number(userId);
 
   async function handlePickImage() {
     try {
@@ -171,14 +208,23 @@ export default function ThreadDetailScreen() {
     }
   }
 
-  function handleReply() {
+  function requireLogin() {
     if (!token) {
       router.push("/login");
-      return;
+      return false;
     }
+    return true;
+  }
 
+  function handleReply() {
+    if (!requireLogin()) return;
     if (!replyText.trim()) return;
     replyMutation.mutate();
+  }
+
+  function handleVote(postId: number, hasVoted: boolean) {
+    if (!requireLogin()) return;
+    voteMutation.mutate({ postId, hasVoted });
   }
 
   function handleDeleteReply(reply: ReplyRow) {
@@ -205,6 +251,11 @@ export default function ThreadDetailScreen() {
   function saveEdit() {
     if (!editingReplyId || !editingText.trim()) return;
     editMutation.mutate();
+  }
+
+  function handleMarkBest(replyId: number) {
+    if (!requireLogin()) return;
+    bestMutation.mutate(replyId);
   }
 
   if (detailQuery.isLoading) {
@@ -244,9 +295,18 @@ export default function ThreadDetailScreen() {
             <ReplyCard
               item={item}
               canManage={!!userId && Number(item.authorId) === Number(userId)}
+              canMarkBest={canMarkBest}
               deleting={
                 deleteMutation.isPending &&
                 deleteMutation.variables === item.id
+              }
+              voting={
+                voteMutation.isPending &&
+                voteMutation.variables?.postId === item.id
+              }
+              markingBest={
+                bestMutation.isPending &&
+                bestMutation.variables === item.id
               }
               editing={editingReplyId === item.id}
               editingText={editingText}
@@ -257,6 +317,8 @@ export default function ThreadDetailScreen() {
               onCancelEdit={cancelEditing}
               onSaveEdit={saveEdit}
               onChangeEditText={setEditingText}
+              onVote={() => handleVote(item.id, !!item.viewerHasVoted)}
+              onMarkBest={() => handleMarkBest(item.id)}
             />
           )}
           ListHeaderComponent={
@@ -279,6 +341,25 @@ export default function ThreadDetailScreen() {
                 </View>
 
                 <Text style={styles.content}>{detail.content}</Text>
+
+                <View style={styles.topicVoteRow}>
+                  <Pressable
+                    onPress={() => handleVote(detail.id, !!detail.viewerHasVoted)}
+                    style={[
+                      styles.voteBtn,
+                      detail.viewerHasVoted && styles.voteBtnActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.voteBtnText,
+                        detail.viewerHasVoted && styles.voteBtnTextActive,
+                      ]}
+                    >
+                      ▲ {detail.voteCount ?? 0}
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
 
               <Text style={styles.replyHeader}>Replies</Text>
@@ -350,7 +431,10 @@ export default function ThreadDetailScreen() {
 function ReplyCard({
   item,
   canManage,
+  canMarkBest,
   deleting,
+  voting,
+  markingBest,
   editing,
   editingText,
   editPending,
@@ -360,10 +444,15 @@ function ReplyCard({
   onCancelEdit,
   onSaveEdit,
   onChangeEditText,
+  onVote,
+  onMarkBest,
 }: {
   item: ReplyRow;
   canManage: boolean;
+  canMarkBest: boolean;
   deleting: boolean;
+  voting: boolean;
+  markingBest: boolean;
   editing: boolean;
   editingText: string;
   editPending: boolean;
@@ -373,9 +462,17 @@ function ReplyCard({
   onCancelEdit: () => void;
   onSaveEdit: () => void;
   onChangeEditText: (value: string) => void;
+  onVote: () => void;
+  onMarkBest: () => void;
 }) {
   return (
     <View style={styles.replyCard}>
+      {item.isBestResponse ? (
+        <View style={styles.bestBadge}>
+          <Text style={styles.bestBadgeText}>Best Response</Text>
+        </View>
+      ) : null}
+
       <View style={styles.replyTopRow}>
         <View style={styles.replyMetaWrap}>
           <Text style={styles.metaTextStrong}>{item.author}</Text>
@@ -430,7 +527,36 @@ function ReplyCard({
           </View>
         </>
       ) : (
-        <Text style={styles.replyText}>{item.text}</Text>
+        <>
+          <Text style={styles.replyText}>{item.text}</Text>
+
+          <View style={styles.replyFooterRow}>
+            <Pressable
+              onPress={onVote}
+              style={[
+                styles.voteBtn,
+                item.viewerHasVoted && styles.voteBtnActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.voteBtnText,
+                  item.viewerHasVoted && styles.voteBtnTextActive,
+                ]}
+              >
+                {voting ? "..." : `▲ ${item.voteCount ?? 0}`}
+              </Text>
+            </Pressable>
+
+            {canMarkBest && !item.isBestResponse ? (
+              <Pressable onPress={onMarkBest} style={styles.bestActionBtn}>
+                <Text style={styles.bestActionBtnText}>
+                  {markingBest ? "Saving..." : "Mark Best"}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </>
       )}
     </View>
   );
@@ -532,6 +658,10 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     color: "#333",
   },
+  topicVoteRow: {
+    flexDirection: "row",
+    marginTop: 14,
+  },
   replyHeader: {
     marginTop: 18,
     marginBottom: 8,
@@ -547,6 +677,19 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: "#ececf1",
+  },
+  bestBadge: {
+    alignSelf: "flex-start",
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#fff4d6",
+  },
+  bestBadgeText: {
+    color: "#9a6700",
+    fontSize: 12,
+    fontWeight: "700",
   },
   replyTopRow: {
     flexDirection: "row",
@@ -592,6 +735,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: "#333",
+  },
+  replyFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+  },
+  voteBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#f1f1f4",
+  },
+  voteBtnActive: {
+    backgroundColor: "#ebe9ff",
+  },
+  voteBtnText: {
+    color: "#444",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  voteBtnTextActive: {
+    color: "#5b49f5",
+  },
+  bestActionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#e9f0fb",
+  },
+  bestActionBtnText: {
+    color: "#175cd3",
+    fontSize: 12,
+    fontWeight: "700",
   },
   editInput: {
     marginTop: 10,

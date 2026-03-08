@@ -1,6 +1,7 @@
 import { useAuthStore } from '../store/auth-store';
 
 const API_BASE = 'https://everythingdid.com/wp-json/buddyboss/v1';
+const ED_API_BASE = 'https://everythingdid.com/wp-json/everythingdid/v1';
 
 export type ForumRow = {
   id: number;
@@ -15,6 +16,9 @@ export type TopicRow = {
   time: string;
   replyCount: number;
   forumId?: number;
+  voteCount?: number;
+  viewerHasVoted?: boolean;
+  bestReplyId?: number;
 };
 
 export type SimpleTopicRow = {
@@ -24,6 +28,9 @@ export type SimpleTopicRow = {
   author: string;
   time: string;
   replyCount: number;
+  voteCount?: number;
+  viewerHasVoted?: boolean;
+  bestReplyId?: number;
 };
 
 export type ReplyRow = {
@@ -32,6 +39,9 @@ export type ReplyRow = {
   author: string;
   time: string;
   authorId?: number;
+  voteCount?: number;
+  viewerHasVoted?: boolean;
+  isBestResponse?: boolean;
 };
 
 export type TopicDetail = {
@@ -41,6 +51,10 @@ export type TopicDetail = {
   author: string;
   time: string;
   replyCount: number;
+  voteCount?: number;
+  viewerHasVoted?: boolean;
+  bestReplyId?: number;
+  authorId?: number;
   replies: ReplyRow[];
 };
 
@@ -137,6 +151,25 @@ async function apiPost(path: string, payload: Record<string, any>) {
   return raw;
 }
 
+async function edApiPost(path: string, payload: Record<string, any>) {
+  const res = await fetch(`${ED_API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await authedHeaders()),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || raw?.code || 'Request failed');
+  }
+
+  return raw;
+}
+
 async function fetchMemberMap(ids: number[]): Promise<Map<number, string>> {
   const uniqueIds = [...new Set(ids.filter((id) => Number(id) > 0))];
   const map = new Map<number, string>();
@@ -157,7 +190,7 @@ async function fetchMemberMap(ids: number[]): Promise<Map<number, string>> {
           map.set(id, name);
         }
       } catch {
-        // Ignore invalid or non-member IDs
+        // ignore
       }
     })
   );
@@ -217,11 +250,10 @@ export async function fetchTopics(params?: {
 
   const authorIds = arr.map((t: any) => pickAuthorId(t)).filter(Boolean);
   const memberMap = await fetchMemberMap(authorIds);
-
   const counts = await Promise.all(
     arr.map((t: any) => fetchAccurateReplyCount(Number(t?.id ?? 0)))
   );
-
+console.log('TOPIC SAMPLE', arr[0]);
   return arr.map((t: any, index: number) => {
     const authorId = pickAuthorId(t);
 
@@ -242,6 +274,9 @@ export async function fetchTopics(params?: {
       time: String(t?.date ?? t?.modified ?? ''),
       replyCount: counts[index] ?? 0,
       forumId: Number(t?.parent ?? 0),
+      voteCount: Number(t?.ed_vote_count ?? 0),
+      viewerHasVoted: Boolean(t?.ed_viewer_has_voted),
+      bestReplyId: Number(t?.ed_best_reply_id ?? 0) || undefined,
     };
   });
 }
@@ -281,8 +316,12 @@ export async function fetchTopicDetail(topicId: number | string): Promise<TopicD
       pickAuthorName(topic) ||
       memberMap.get(topicAuthorId) ||
       fallbackAuthor(topic),
+    authorId: topicAuthorId || undefined,
     time: String(topic?.date ?? topic?.modified ?? ''),
     replyCount: filteredReplies.length,
+    voteCount: Number(topic?.ed_vote_count ?? 0),
+    viewerHasVoted: Boolean(topic?.ed_viewer_has_voted),
+    bestReplyId: Number(topic?.ed_best_reply_id ?? 0) || undefined,
     replies: filteredReplies.map((r: any) => {
       const authorId = pickAuthorId(r);
 
@@ -298,6 +337,9 @@ export async function fetchTopicDetail(topicId: number | string): Promise<TopicD
           fallbackAuthor(r),
         time: String(r?.date ?? r?.modified ?? ''),
         authorId,
+        voteCount: Number(r?.ed_vote_count ?? 0),
+        viewerHasVoted: Boolean(r?.ed_viewer_has_voted),
+        isBestResponse: Boolean(r?.ed_is_best_response),
       };
     }),
   };
@@ -366,6 +408,9 @@ export async function fetchSubscribedThreads(): Promise<SimpleTopicRow[]> {
         fallbackAuthor(t),
       time: String(t?.date ?? t?.modified ?? ''),
       replyCount: counts[index] ?? 0,
+      voteCount: Number(t?.ed_vote_count ?? 0),
+      viewerHasVoted: Boolean(t?.ed_viewer_has_voted),
+      bestReplyId: Number(t?.ed_best_reply_id ?? 0) || undefined,
     };
   });
 }
@@ -410,6 +455,9 @@ export async function fetchTopicsByIds(ids: number[]): Promise<SimpleTopicRow[]>
         fallbackAuthor(t),
       time: String(t?.date ?? t?.modified ?? ''),
       replyCount: counts[index] ?? 0,
+      voteCount: Number(t?.ed_vote_count ?? 0),
+      viewerHasVoted: Boolean(t?.ed_viewer_has_voted),
+      bestReplyId: Number(t?.ed_best_reply_id ?? 0) || undefined,
     };
   });
 }
@@ -464,5 +512,29 @@ export async function updateReply({
   return apiPost(`/reply/${replyId}`, {
     topic_id: Number(topicId),
     content: String(content).trim(),
+  });
+}
+
+export async function votePost({
+  postId,
+  direction,
+}: {
+  postId: number | string;
+  direction: 'up' | 'remove';
+}) {
+  return edApiPost(`/vote/${postId}`, {
+    direction,
+  });
+}
+
+export async function markBestReply({
+  topicId,
+  replyId,
+}: {
+  topicId: number | string;
+  replyId: number | string;
+}) {
+  return edApiPost(`/topics/${topicId}/best-reply`, {
+    reply_id: Number(replyId),
   });
 }

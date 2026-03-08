@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
@@ -17,6 +17,7 @@ import {
   fetchTopics,
   fetchSubscribedThreads,
   TopicRow,
+  votePost,
 } from '../../lib/api';
 import { useAuthStore } from '../../store/auth-store';
 import { useSavedThreadsStore } from '../../store/saved-threads-store';
@@ -31,6 +32,28 @@ export default function ThreadsScreen() {
   const token = useAuthStore((s) => s.token);
   const username = useAuthStore((s) => s.username);
   const clearAuth = useAuthStore((s) => s.clearAuth);
+
+  const queryClient = useQueryClient();
+
+  async function refreshThreadLists() {
+    await queryClient.invalidateQueries({ queryKey: ['topics'] });
+    await queryClient.invalidateQueries({ queryKey: ['following-topics'] });
+    await queryClient.invalidateQueries({ queryKey: ['saved-threads'] });
+    await queryClient.invalidateQueries({ queryKey: ['subscribed-threads'] });
+  }
+
+  const topicVoteMutation = useMutation({
+    mutationFn: ({
+      postId,
+      direction,
+    }: {
+      postId: number;
+      direction: 'up' | 'remove';
+    }) => votePost({ postId, direction }),
+    onSuccess: async () => {
+      await refreshThreadLists();
+    },
+  });
 
   const forumsQuery = useQuery({
     queryKey: ['forums'],
@@ -172,7 +195,22 @@ export default function ThreadsScreen() {
         <FlatList
           data={topics}
           keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => <ThreadCard item={item} />}
+          renderItem={({ item }) => (
+            <ThreadCard
+              item={item}
+              token={token}
+              voting={
+                topicVoteMutation.isPending &&
+                topicVoteMutation.variables?.postId === item.id
+              }
+              onVote={(topic) =>
+                topicVoteMutation.mutate({
+                  postId: topic.id,
+                  direction: topic.viewerHasVoted ? 'remove' : 'up',
+                })
+              }
+            />
+          )}
           ListHeaderComponent={header}
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -251,7 +289,17 @@ function ForumChip({
   );
 }
 
-function ThreadCard({ item }: { item: TopicRow }) {
+function ThreadCard({
+  item,
+  token,
+  onVote,
+  voting,
+}: {
+  item: TopicRow;
+  token: string | null;
+  onVote: (item: TopicRow) => void;
+  voting: boolean;
+}) {
   const isSaved = useSavedThreadsStore((s) => s.isSaved(item.id));
   const toggleSaved = useSavedThreadsStore((s) => s.toggleSaved);
 
@@ -290,6 +338,34 @@ function ThreadCard({ item }: { item: TopicRow }) {
         <Text style={styles.metaText}>{formatTime(item.time)}</Text>
         <Text style={styles.metaDot}>•</Text>
         <Text style={styles.metaText}>{item.replyCount} replies</Text>
+      </View>
+
+      <View style={styles.cardFooterRow}>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+
+            if (!token) {
+              router.push('/login');
+              return;
+            }
+
+            onVote(item);
+          }}
+          style={[
+            styles.voteChip,
+            item.viewerHasVoted && styles.voteChipActive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.voteChipText,
+              item.viewerHasVoted && styles.voteChipTextActive,
+            ]}
+          >
+            {voting ? 'Saving...' : `▲ ${item.voteCount ?? 0}`}
+          </Text>
+        </Pressable>
       </View>
     </Pressable>
   );
@@ -514,6 +590,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#a0a0a0',
     marginHorizontal: 6,
+  },
+  cardFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  voteChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#f1f1f4',
+  },
+  voteChipActive: {
+    backgroundColor: '#ebe9ff',
+  },
+  voteChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#444',
+  },
+  voteChipTextActive: {
+    color: '#5b49f5',
   },
   empty: {
     paddingHorizontal: 24,
