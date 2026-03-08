@@ -17,6 +17,15 @@ export type TopicRow = {
   forumId?: number;
 };
 
+export type SimpleTopicRow = {
+  id: number;
+  title: string;
+  excerpt: string;
+  author: string;
+  time: string;
+  replyCount: number;
+};
+
 export type ReplyRow = {
   id: number;
   text: string;
@@ -289,6 +298,63 @@ export async function createThread({
     content,
     status: 'publish',
   });
+}
+
+function mapTopicRow(t: any): SimpleTopicRow {
+  return {
+    id: Number(t?.id ?? 0),
+    title:
+      htmlToText(t?.title?.rendered ?? '') ||
+      String(t?.title ?? '') ||
+      'Untitled Thread',
+    excerpt:
+      htmlToText(t?.excerpt?.rendered ?? '') ||
+      htmlToText(t?.content?.rendered ?? '') ||
+      '',
+    author: fallbackAuthor(t),
+    time: String(t?.date ?? t?.modified ?? ''),
+    replyCount: Number(t?.reply_count ?? t?.replies ?? 0),
+  };
+}
+
+export async function fetchSubscribedThreads(): Promise<SimpleTopicRow[]> {
+  const raw = await apiGet('/subscriptions?type=topic&per_page=50').catch(() => []);
+  const arr = Array.isArray(raw) ? raw : [];
+
+  const itemIds = arr
+    .map((s: any) => Number(s?.item_id ?? 0))
+    .filter(Boolean);
+
+  if (!itemIds.length) return [];
+
+  const topics = await Promise.all(
+    itemIds.map(async (id) => {
+      try {
+        return await apiGet(`/topics/${id}`);
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return topics.filter(Boolean).map((t: any) => mapTopicRow(t));
+}
+
+export async function fetchTopicsByIds(ids: number[]): Promise<SimpleTopicRow[]> {
+  const uniqueIds = [...new Set(ids.map(Number).filter(Boolean))];
+  if (!uniqueIds.length) return [];
+
+  const topics = await Promise.all(
+    uniqueIds.map(async (id) => {
+      try {
+        return await apiGet(`/topics/${id}`);
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return topics.filter(Boolean).map((t: any) => mapTopicRow(t));
 }
 
 export async function postReply({

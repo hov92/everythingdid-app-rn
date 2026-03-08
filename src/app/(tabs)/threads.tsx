@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useSavedThreadsStore } from '../../store/saved-threads-store';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { fetchForums, fetchTopics, TopicRow } from '../../lib/api';
+import { useAuthStore } from '../../store/auth-store';
 
 type SortType = 'latest' | 'trending';
 
@@ -20,6 +22,10 @@ export default function ThreadsScreen() {
   const [sort, setSort] = useState<SortType>('latest');
   const [search, setSearch] = useState('');
   const [selectedForumId, setSelectedForumId] = useState<number | null>(null);
+
+  const token = useAuthStore((s) => s.token);
+  const username = useAuthStore((s) => s.username);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
 
   const forumsQuery = useQuery({
     queryKey: ['forums'],
@@ -43,24 +49,33 @@ export default function ThreadsScreen() {
     () => (
       <View style={styles.headerWrap}>
         <View style={styles.topRow}>
-  <Text style={styles.title}>Threads</Text>
+          <Text style={styles.title}>Threads</Text>
 
-  <View style={{ flexDirection: 'row', gap: 8 }}>
-    <Pressable
-      style={styles.loginBtn}
-      onPress={() => router.push('/login')}
-    >
-      <Text style={styles.loginBtnText}>Log in</Text>
-    </Pressable>
+          <View style={styles.topActions}>
+            {token ? (
+              <Pressable style={styles.loggedInBadge} onPress={() => clearAuth()}>
+                <View style={styles.onlineDot} />
+                <Text style={styles.loggedInBadgeText}>
+                  {username ? `Logged in as ${username}` : 'Logged in'}
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={styles.loginBtn}
+                onPress={() => router.push('/login')}
+              >
+                <Text style={styles.loginBtnText}>Log in</Text>
+              </Pressable>
+            )}
 
-    <Pressable
-      style={styles.newBtn}
-      onPress={() => router.push('/thread/new')}
-    >
-      <Text style={styles.newBtnText}>New</Text>
-    </Pressable>
-  </View>
-</View>
+            <Pressable
+              style={styles.newBtn}
+              onPress={() => router.push('/thread/new')}
+            >
+              <Text style={styles.newBtnText}>New</Text>
+            </Pressable>
+          </View>
+        </View>
 
         <TextInput
           value={search}
@@ -105,7 +120,7 @@ export default function ThreadsScreen() {
         </ScrollView>
       </View>
     ),
-    [forums, search, selectedForumId, sort]
+    [forums, search, selectedForumId, sort, token, username, clearAuth]
   );
 
   return (
@@ -170,6 +185,9 @@ function ForumChip({
 }
 
 function ThreadCard({ item }: { item: TopicRow }) {
+  const isSaved = useSavedThreadsStore((s) => s.isSaved(item.id));
+  const toggleSaved = useSavedThreadsStore((s) => s.toggleSaved);
+
   return (
     <Pressable
       style={styles.card}
@@ -177,6 +195,18 @@ function ThreadCard({ item }: { item: TopicRow }) {
     >
       <View style={styles.cardTop}>
         <Text style={styles.cardTitle}>{item.title}</Text>
+
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            toggleSaved(item.id);
+          }}
+          style={[styles.saveChip, isSaved && styles.saveChipActive]}
+        >
+          <Text style={[styles.saveChipText, isSaved && styles.saveChipTextActive]}>
+            {isSaved ? 'Saved' : 'Save'}
+          </Text>
+        </Pressable>
       </View>
 
       {!!item.excerpt && (
@@ -227,10 +257,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#f6f6f7',
   },
   topRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 14,
+  },
+  topActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    flexWrap: 'wrap',
   },
   title: {
     fontSize: 30,
@@ -246,6 +279,37 @@ const styles = StyleSheet.create({
   newBtnText: {
     color: '#fff',
     fontSize: 14,
+    fontWeight: '700',
+  },
+  loginBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#ececf1',
+  },
+  loginBtnText: {
+    color: '#111',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  loggedInBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#e9f8ee',
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#18a957',
+  },
+  loggedInBadgeText: {
+    color: '#146c3b',
+    fontSize: 13,
     fontWeight: '700',
   },
   search: {
@@ -365,17 +429,25 @@ const styles = StyleSheet.create({
     color: '#777',
     textAlign: 'center',
   },
-  loginBtn: {
-  paddingHorizontal: 14,
-  paddingVertical: 10,
+
+  saveChip: {
+  paddingHorizontal: 10,
+  paddingVertical: 6,
   borderRadius: 999,
-  backgroundColor: '#ececf1',
-  marginLeft: 8,
+  backgroundColor: '#f1f1f4',
 },
 
-loginBtnText: {
-  color: '#111',
-  fontSize: 14,
+saveChipActive: {
+  backgroundColor: '#ebe9ff',
+},
+
+saveChipText: {
+  fontSize: 12,
   fontWeight: '700',
+  color: '#444',
+},
+
+saveChipTextActive: {
+  color: '#5b49f5',
 },
 });
