@@ -87,5 +87,6 @@ export async function uploadWpMedia(file: PickedMedia): Promise<number | null> {
   const raw = await res.json().catch(() => null);
   if (!res.ok) throw new Error(raw?.message || 'Media upload failed.');
 
+  console.log('UPLOAD MEDIA RAW', raw);
   return Number(raw?.id ?? 0) || null;
 }

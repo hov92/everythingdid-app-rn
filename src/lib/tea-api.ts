@@ -324,15 +324,22 @@ export async function createTeaPost({
   content: string;
   mediaIds?: number[];
 }) {
+  const trimmed = String(content).trim();
+
   const payload: Record<string, any> = {
-    content: String(content).trim(),
+    content: trimmed || (mediaIds.length ? '.' : ''),
   };
 
   if (mediaIds.length) {
     payload.bbp_media = mediaIds;
   }
 
-  return apiPost('/activity', payload);
+  console.log('CREATE TEA PAYLOAD', payload);
+
+  const response = await apiPost('/activity', payload);
+  console.log('CREATE TEA RESPONSE', response);
+
+  return response;
 }
 
 export async function updateTeaPost({
