@@ -210,14 +210,27 @@ console.log('ACTIVITY TYPES', arr.map((item: any) => ({
   component: item?.component,
 })));
   return arr
-    .filter((item: any) => {
-      const type = String(item?.type ?? '');
-      const component = String(item?.component ?? '');
-      return type === 'activity_update' && component === 'activity';
-    })
-    .filter((item: any) => Number(item?.id ?? 0) > 0)
-    .map(mapActivityItem);
-}
+  .filter((item: any) => {
+    const id = Number(item?.id ?? 0);
+    const type = String(item?.type ?? '').toLowerCase();
+    const content = extractActivityText(item).trim().toLowerCase();
+
+    if (!id) return false;
+
+    // only keep real update items
+    if (type !== 'activity_update') return false;
+
+    // require meaningful user content
+    if (!content) return false;
+
+    // remove obvious system-ish leftovers
+    if (content === 'reshared') return false;
+    if (content.includes('view original')) return false;
+    if (content.includes('posted an update')) return false;
+
+    return true;
+  })
+  .map(mapActivityItem);}
 
 export async function fetchTeaPostDetail(activityId: number | string): Promise<TeaPost> {
   const raw = await apiGet(`/activity/${activityId}`);
@@ -329,19 +342,16 @@ export async function toggleTeaFavorite({
 }
 
 function extractActivityText(item: any): string {
-  const candidates = [
-    item?.content?.rendered,
-    item?.content?.raw,
-    typeof item?.content === 'string' ? item.content : '',
-    item?.action?.rendered,
-    typeof item?.action === 'string' ? item.action : '',
-    item?.title?.rendered,
-    typeof item?.title === 'string' ? item.title : '',
-  ];
+  const contentRendered =
+    typeof item?.content?.rendered === 'string' ? item.content.rendered : '';
+  const contentRaw =
+    typeof item?.content?.raw === 'string' ? item.content.raw : '';
+  const contentString =
+    typeof item?.content === 'string' ? item.content : '';
 
-  const firstText = candidates.find(
-    (value) => typeof value === 'string' && value.trim().length > 0
-  );
+  const contentText = htmlToText(
+    contentRendered || contentRaw || contentString
+  ).trim();
 
-  return htmlToText(firstText || '');
+  return contentText;
 }

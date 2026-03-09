@@ -118,6 +118,7 @@ export default function TeaPostDetailScreen() {
       router.push('/login');
       return;
     }
+
     if (!commentText.trim()) return;
     createCommentMutation.mutate();
   }
@@ -147,7 +148,7 @@ export default function TeaPostDetailScreen() {
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.centerState}>
-          <Text style={styles.errorText}>Could not load post.</Text>
+          <Text style={styles.errorText}>Could not load tea post.</Text>
           <Pressable onPress={() => router.back()} style={styles.backBtn}>
             <Text style={styles.backBtnText}>Go back</Text>
           </Pressable>
@@ -155,6 +156,9 @@ export default function TeaPostDetailScreen() {
       </SafeAreaView>
     );
   }
+
+  const hasMedia = !!post.imageUrls?.length;
+  const hasText = !!post.content?.trim();
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
@@ -198,35 +202,41 @@ export default function TeaPostDetailScreen() {
               </Pressable>
 
               <View style={styles.postCard}>
-                <Pressable
-                  onPress={() => {
-                    if (post.authorId) {
-                      router.push(`/tea/profile/${post.authorId}`);
-                    }
-                  }}
-                  style={styles.authorRow}
-                >
-                  <View style={styles.avatar} />
-                  <View>
-                    <Text style={styles.authorName}>{post.author}</Text>
-                    <Text style={styles.metaText}>{formatTime(post.time)}</Text>
+                <View style={styles.postTopRow}>
+                  <View style={styles.authorRow}>
+                    <View style={styles.avatar} />
+                    <View style={styles.authorTextWrap}>
+                      <Text style={styles.authorName}>{post.author}</Text>
+                      <Text style={styles.metaText}>{formatTime(post.time)}</Text>
+                    </View>
                   </View>
-                </Pressable>
 
-                <Text style={styles.postContent}>{post.content}</Text>
+                  <Pressable style={styles.followMiniBtn}>
+                    <Text style={styles.followMiniBtnText}>Follow</Text>
+                  </Pressable>
+                </View>
 
-                {post.imageUrls?.length ? (
-                  <Image source={{ uri: post.imageUrls[0] }} style={styles.postImage} />
+                {hasText ? (
+                  <Text style={styles.postContent}>{post.content}</Text>
                 ) : null}
 
-                <View style={styles.postActions}>
+                {hasMedia ? (
+                  <View style={styles.mediaWrap}>
+                    <Image
+                      source={{ uri: post.imageUrls[0] }}
+                      style={styles.postImage}
+                      resizeMode="cover"
+                    />
+                  </View>
+                ) : null}
+
+                <View style={styles.postFooterRow}>
                   <Pressable
                     onPress={() => {
                       if (!token) {
                         router.push('/login');
                         return;
                       }
-
                       favoriteMutation.mutate({
                         favorite: !post.viewerHasLiked,
                       });
@@ -247,6 +257,10 @@ export default function TeaPostDetailScreen() {
                         : `♥ ${post.favoriteCount ?? 0}`}
                     </Text>
                   </Pressable>
+
+                  <View style={styles.actionPill}>
+                    <Text style={styles.actionPillText}>💬 {comments.length}</Text>
+                  </View>
 
                   <Pressable style={styles.actionPill}>
                     <Text style={styles.actionPillText}>↻ Repost</Text>
@@ -330,9 +344,9 @@ function TeaCommentCard({
         </View>
 
         {canManage && !editing ? (
-          <View style={styles.commentActions}>
-            <Pressable onPress={onStartEdit} style={styles.smallBtn}>
-              <Text style={styles.smallBtnText}>Edit</Text>
+          <View style={styles.commentActionRow}>
+            <Pressable onPress={onStartEdit} style={styles.editBtn}>
+              <Text style={styles.editBtnText}>Edit</Text>
             </Pressable>
 
             <Pressable onPress={onDelete} style={styles.deleteBtn}>
@@ -356,8 +370,8 @@ function TeaCommentCard({
           />
 
           <View style={styles.editActionsRow}>
-            <Pressable onPress={onCancelEdit} style={styles.smallBtn}>
-              <Text style={styles.smallBtnText}>Cancel</Text>
+            <Pressable onPress={onCancelEdit} style={styles.cancelBtn}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
             </Pressable>
 
             <Pressable
@@ -390,23 +404,9 @@ function formatTime(value: string) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f6f6f7' },
-  listContent: { paddingBottom: 150 },
-  headerWrap: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  backPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: '#ececf1',
-    marginBottom: 12,
-  },
-  backPillText: {
-    color: '#111',
-    fontWeight: '700',
+  screen: {
+    flex: 1,
+    backgroundColor: '#f6f6f7',
   },
   centerState: {
     flex: 1,
@@ -429,6 +429,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
   },
+  listContent: {
+    paddingBottom: 150,
+  },
+  headerWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  backPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#ececf1',
+    marginBottom: 12,
+  },
+  backPillText: {
+    color: '#111',
+    fontWeight: '700',
+  },
   postCard: {
     backgroundColor: '#fff',
     borderRadius: 22,
@@ -436,10 +455,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ececf1',
   },
+  postTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+    alignItems: 'center',
+  },
   authorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
   },
   avatar: {
     width: 42,
@@ -447,30 +473,49 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#ececf1',
   },
+  authorTextWrap: {
+    flex: 1,
+  },
   authorName: {
+    color: '#222',
     fontSize: 15,
     fontWeight: '800',
-    color: '#222',
   },
   metaText: {
     marginTop: 2,
-    fontSize: 12,
     color: '#777',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  followMiniBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#ececf1',
+  },
+  followMiniBtnText: {
+    color: '#333',
+    fontSize: 12,
+    fontWeight: '700',
   },
   postContent: {
-    marginTop: 14,
+    marginTop: 12,
+    color: '#222',
     fontSize: 16,
     lineHeight: 24,
-    color: '#222',
   },
-  postImage: {
-    marginTop: 14,
-    width: '100%',
-    height: 320,
+  mediaWrap: {
+    marginTop: 12,
     borderRadius: 18,
+    overflow: 'hidden',
     backgroundColor: '#eee',
   },
-  postActions: {
+  postImage: {
+    width: '100%',
+    height: 360,
+    backgroundColor: '#eee',
+  },
+  postFooterRow: {
     flexDirection: 'row',
     gap: 8,
     marginTop: 14,
@@ -523,8 +568,8 @@ const styles = StyleSheet.create({
   },
   commentAuthor: {
     fontSize: 12,
-    fontWeight: '700',
     color: '#333',
+    fontWeight: '700',
   },
   commentMetaText: {
     fontSize: 12,
@@ -536,8 +581,9 @@ const styles = StyleSheet.create({
     color: '#a0a0a0',
     marginHorizontal: 6,
   },
-  commentActions: {
+  commentActionRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   commentText: {
@@ -546,14 +592,14 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     color: '#333',
   },
-  smallBtn: {
+  editBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: '#ececf1',
+    backgroundColor: '#e9f0fb',
   },
-  smallBtnText: {
-    color: '#333',
+  editBtnText: {
+    color: '#175cd3',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -584,6 +630,17 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 8,
     marginTop: 10,
+  },
+  cancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#ececf1',
+  },
+  cancelBtnText: {
+    color: '#333',
+    fontSize: 12,
+    fontWeight: '700',
   },
   saveBtn: {
     paddingHorizontal: 12,

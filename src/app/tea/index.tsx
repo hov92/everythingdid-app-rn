@@ -200,6 +200,9 @@ function TeaFeedCard({
   onLike: () => void;
   liking: boolean;
 }) {
+  const hasMedia = !!item.imageUrls?.length;
+  const hasText = !!item.content?.trim();
+
   return (
     <Pressable
       style={styles.card}
@@ -227,14 +230,23 @@ function TeaFeedCard({
         </Pressable>
       </View>
 
-      {!!item.content?.trim() && (
-  <Text style={styles.cardExcerpt} numberOfLines={6}>
-    {item.content}
-  </Text>
-)}
+      {hasText ? (
+        <Text
+          style={[styles.cardContent, hasMedia && styles.cardContentWithMedia]}
+          numberOfLines={hasMedia ? 3 : 6}
+        >
+          {item.content}
+        </Text>
+      ) : null}
 
-      {item.imageUrls?.length ? (
-        <Image source={{ uri: item.imageUrls[0] }} style={styles.cardImage} />
+      {hasMedia ? (
+        <View style={styles.mediaWrap}>
+          <Image
+            source={{ uri: item.imageUrls[0] }}
+            style={styles.cardImage}
+            resizeMode="cover"
+          />
+        </View>
       ) : null}
 
       <View style={styles.cardActions}>
@@ -480,19 +492,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  cardContent: {
-    marginTop: 12,
-    color: '#222',
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  cardImage: {
-    marginTop: 12,
-    width: '100%',
-    height: 320,
-    borderRadius: 18,
-    backgroundColor: '#eee',
-  },
+  
   cardActions: {
     flexDirection: 'row',
     gap: 8,
@@ -536,4 +536,27 @@ const styles = StyleSheet.create({
     color: '#777',
     textAlign: 'center',
   },
+  mediaWrap: {
+  marginTop: 12,
+  borderRadius: 18,
+  overflow: 'hidden',
+  backgroundColor: '#eee',
+},
+
+cardContent: {
+  marginTop: 12,
+  color: '#222',
+  fontSize: 16,
+  lineHeight: 24,
+},
+
+cardContentWithMedia: {
+  marginBottom: 0,
+},
+
+cardImage: {
+  width: '100%',
+  height: 320,
+  backgroundColor: '#eee',
+},
 });
