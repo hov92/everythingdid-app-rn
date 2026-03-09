@@ -14,6 +14,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { fetchTeaPosts, TeaPost, toggleTeaFavorite } from '../../lib/tea-api';
 import { useAuthStore } from '../../store/auth-store';
 
@@ -72,13 +73,13 @@ export default function TeaHomeScreen() {
           </View>
         </View>
 
-        <TextInput
+        {/* <TextInput
           value={search}
           onChangeText={setSearch}
           placeholder="Search tea posts"
           placeholderTextColor="#8b8b8b"
           style={styles.search}
-        />
+        /> */}
 
         <ScrollView
           horizontal
@@ -119,13 +120,7 @@ export default function TeaHomeScreen() {
           </Pressable>
         </View>
 
-        <Pressable
-          onPress={() => router.push('/tea/new-post')}
-          style={styles.quickCompose}
-        >
-          <View style={styles.quickAvatar} />
-          <Text style={styles.quickComposeText}>Share some tea...</Text>
-        </Pressable>
+        
       </View>
     ),
     [search]
@@ -201,12 +196,13 @@ function TeaFeedCard({
   liking: boolean;
 }) {
   const hasMedia = !!item.imageUrls?.length;
+  const hasVideo = !!item.videoUrls?.length;
   const hasText = !!item.content?.trim();
 
   return (
     <Pressable
       style={styles.card}
-      onPress={() => router.push(`/tea/post/${item.id}`)}
+      onPress={() => router.push(`/tea/${item.id}`)}
     >
       <View style={styles.cardTopRow}>
         <Pressable
@@ -232,14 +228,18 @@ function TeaFeedCard({
 
       {hasText ? (
         <Text
-          style={[styles.cardContent, hasMedia && styles.cardContentWithMedia]}
-          numberOfLines={hasMedia ? 3 : 6}
+          style={[styles.cardContent, (hasMedia || hasVideo) && styles.cardContentWithMedia]}
+          numberOfLines={hasMedia || hasVideo ? 3 : 6}
         >
           {item.content}
         </Text>
       ) : null}
 
-      {hasMedia ? (
+      {hasVideo ? (
+        <View style={styles.mediaWrap}>
+          <FeedVideo uri={item.videoUrls[0]} />
+        </View>
+      ) : hasMedia ? (
         <View style={styles.mediaWrap}>
           <Image
             source={{ uri: item.imageUrls[0] }}
@@ -277,7 +277,7 @@ function TeaFeedCard({
         <Pressable
           onPress={(e) => {
             e.stopPropagation();
-            router.push(`/tea/post/${item.id}`);
+            router.push(`/tea/${item.id}`);
           }}
           style={styles.actionPill}
         >
@@ -289,6 +289,22 @@ function TeaFeedCard({
         </Pressable>
       </View>
     </Pressable>
+  );
+}
+
+function FeedVideo({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = true;
+    p.muted = true;
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={styles.cardImage}
+      nativeControls={false}
+      contentFit="cover"
+    />
   );
 }
 

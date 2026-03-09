@@ -12,6 +12,7 @@ export type TeaPost = {
   viewerHasLiked?: boolean;
   commentCount: number;
   imageUrls: string[];
+  videoUrls: string[];
 };
 
 export type TeaComment = {
@@ -128,6 +129,9 @@ function pickActivityImageUrls(item: any): string[] {
     : [];
 
   for (const media of mediaArr) {
+    const mime = String(media?.mime_type ?? media?.type ?? '').toLowerCase();
+    if (mime.startsWith('video/')) continue;
+
     const url = String(
       media?.full ??
         media?.source_url ??
@@ -152,6 +156,60 @@ function pickActivityImageUrls(item: any): string[] {
   return [...new Set(urls)];
 }
 
+function pickActivityVideoUrls(item: any): string[] {
+  const urls: string[] = [];
+
+  const candidates = [
+    ...(Array.isArray(item?.bb_videos) ? item.bb_videos : []),
+    ...(Array.isArray(item?.bp_videos) ? item.bp_videos : []),
+    ...(Array.isArray(item?.videos) ? item.videos : []),
+    ...(Array.isArray(item?.video) ? item.video : []),
+    ...(Array.isArray(item?.bbp_media) ? item.bbp_media : []),
+    ...(Array.isArray(item?.bp_media) ? item.bp_media : []),
+    ...(Array.isArray(item?.media) ? item.media : []),
+  ];
+
+  for (const video of candidates) {
+    const mime = String(video?.mime_type ?? video?.type ?? '').toLowerCase();
+    const url = String(
+      video?.full ??
+        video?.source_url ??
+        video?.video_url ??
+        video?.url ??
+        video?.attachment_data?.full ??
+        ''
+    ).trim();
+
+    const looksLikeVideo =
+      mime.startsWith('video/') ||
+      /\.(mp4|mov|m4v|webm)$/i.test(url);
+
+    if (looksLikeVideo && url) urls.push(url);
+  }
+
+  const single = String(
+    item?.bb_videos?.full ??
+      item?.bp_videos?.full ??
+      item?.video_url ??
+      ''
+  ).trim();
+
+  if (single) urls.push(single);
+
+  return [...new Set(urls)];
+}
+
+function extractActivityText(item: any): string {
+  const contentRendered =
+    typeof item?.content?.rendered === 'string' ? item.content.rendered : '';
+  const contentRaw =
+    typeof item?.content?.raw === 'string' ? item.content.raw : '';
+  const contentString =
+    typeof item?.content === 'string' ? item.content : '';
+
+  return htmlToText(contentRendered || contentRaw || contentString).trim();
+}
+
 function mapActivityItem(item: any): TeaPost {
   const authorId = pickActivityAuthorId(item);
 
@@ -170,6 +228,7 @@ function mapActivityItem(item: any): TeaPost {
         : false,
     commentCount: Number(item?.comment_count ?? item?.comments_count ?? 0),
     imageUrls: pickActivityImageUrls(item),
+    videoUrls: pickActivityVideoUrls(item),
   };
 }
 
@@ -204,33 +263,26 @@ export async function fetchTeaPosts(params?: {
     : Array.isArray(raw?.activities)
     ? raw.activities
     : [];
-console.log('ACTIVITY TYPES', arr.map((item: any) => ({
-  id: item?.id,
-  type: item?.type,
-  component: item?.component,
-})));
+
   return arr
-  .filter((item: any) => {
-    const id = Number(item?.id ?? 0);
-    const type = String(item?.type ?? '').toLowerCase();
-    const content = extractActivityText(item).trim().toLowerCase();
+    .filter((item: any) => {
+      const id = Number(item?.id ?? 0);
+      const type = String(item?.type ?? '').toLowerCase();
+      const content = extractActivityText(item).trim().toLowerCase();
 
-    if (!id) return false;
+      if (!id) return false;
+      if (type !== 'activity_update') return false;
+      if (!content && !pickActivityImageUrls(item).length && !pickActivityVideoUrls(item).length) {
+        return false;
+      }
+      if (content === 'reshared') return false;
+      if (content.includes('view original')) return false;
+      if (content.includes('posted an update')) return false;
 
-    // only keep real update items
-    if (type !== 'activity_update') return false;
-
-    // require meaningful user content
-    if (!content) return false;
-
-    // remove obvious system-ish leftovers
-    if (content === 'reshared') return false;
-    if (content.includes('view original')) return false;
-    if (content.includes('posted an update')) return false;
-
-    return true;
-  })
-  .map(mapActivityItem);}
+      return true;
+    })
+    .map(mapActivityItem);
+}
 
 export async function fetchTeaPostDetail(activityId: number | string): Promise<TeaPost> {
   const raw = await apiGet(`/activity/${activityId}`);
@@ -339,19 +391,4 @@ export async function toggleTeaFavorite({
   return apiPost(`/activity/${activityId}/favorite`, {
     favorite,
   });
-}
-
-function extractActivityText(item: any): string {
-  const contentRendered =
-    typeof item?.content?.rendered === 'string' ? item.content.rendered : '';
-  const contentRaw =
-    typeof item?.content?.raw === 'string' ? item.content.raw : '';
-  const contentString =
-    typeof item?.content === 'string' ? item.content : '';
-
-  const contentText = htmlToText(
-    contentRendered || contentRaw || contentString
-  ).trim();
-
-  return contentText;
 }

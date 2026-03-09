@@ -6,6 +6,22 @@ export type PickedMedia = {
   mimeType: string;
 };
 
+function normalizePickedAsset(asset: ImagePicker.ImagePickerAsset): PickedMedia {
+  const isVideo =
+    asset.type === 'video' ||
+    String(asset.mimeType || '').toLowerCase().startsWith('video/');
+
+  return {
+    uri: asset.uri,
+    fileName:
+      asset.fileName ||
+      `${isVideo ? 'video' : 'photo'}-${Date.now()}.${
+        isVideo ? 'mp4' : 'jpg'
+      }`,
+    mimeType: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+  };
+}
+
 export async function pickSingleImage(): Promise<PickedMedia | null> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) throw new Error('Media permission denied.');
@@ -17,13 +33,21 @@ export async function pickSingleImage(): Promise<PickedMedia | null> {
   });
 
   if (res.canceled || !res.assets?.length) return null;
+  return normalizePickedAsset(res.assets[0]);
+}
 
-  const asset = res.assets[0];
-  return {
-    uri: asset.uri,
-    fileName: asset.fileName || `photo-${Date.now()}.jpg`,
-    mimeType: asset.mimeType || 'image/jpeg',
-  };
+export async function pickSingleVideo(): Promise<PickedMedia | null> {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) throw new Error('Media permission denied.');
+
+  const res = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['videos'],
+    allowsEditing: false,
+    quality: 1,
+  });
+
+  if (res.canceled || !res.assets?.length) return null;
+  return normalizePickedAsset(res.assets[0]);
 }
 
 export async function takePhoto(): Promise<PickedMedia | null> {
@@ -37,13 +61,7 @@ export async function takePhoto(): Promise<PickedMedia | null> {
   });
 
   if (res.canceled || !res.assets?.length) return null;
-
-  const asset = res.assets[0];
-  return {
-    uri: asset.uri,
-    fileName: asset.fileName || `camera-${Date.now()}.jpg`,
-    mimeType: asset.mimeType || 'image/jpeg',
-  };
+  return normalizePickedAsset(res.assets[0]);
 }
 
 export async function uploadWpMedia(file: PickedMedia): Promise<number | null> {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import {
   ActivityIndicator,
   Alert,
@@ -159,6 +160,10 @@ export default function TeaDetailScreen() {
       </SafeAreaView>
     );
   }
+
+  const hasText = !!post.content?.trim();
+const hasImage = !!post.imageUrls?.length;
+const hasVideo = !!post.videoUrls?.length;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
@@ -372,6 +377,21 @@ function TeaCommentCard({
     </View>
   );
 }
+function DetailVideo({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = false;
+    p.muted = false;
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={styles.postImage}
+      nativeControls
+      contentFit="cover"
+    />
+  );
+}
 
 function formatTime(value: string) {
   if (!value) return 'Now';
@@ -462,17 +482,7 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     color: '#333',
   },
-  postImage: {
-    marginTop: 14,
-    width: '100%',
-    height: 240,
-    borderRadius: 16,
-    backgroundColor: '#eee',
-  },
-  postFooterRow: {
-    flexDirection: 'row',
-    marginTop: 12,
-  },
+
   likeChip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -651,4 +661,75 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
+  postTopRow: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  gap: 10,
+  alignItems: 'center',
+},
+authorRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 10,
+  flex: 1,
+},
+avatar: {
+  width: 42,
+  height: 42,
+  borderRadius: 999,
+  backgroundColor: '#ececf1',
+},
+authorTextWrap: {
+  flex: 1,
+},
+authorName: {
+  color: '#222',
+  fontSize: 15,
+  fontWeight: '800',
+},
+followMiniBtn: {
+  paddingHorizontal: 12,
+  paddingVertical: 8,
+  borderRadius: 999,
+  backgroundColor: '#ececf1',
+},
+followMiniBtnText: {
+  color: '#333',
+  fontSize: 12,
+  fontWeight: '700',
+},
+mediaWrap: {
+  marginTop: 12,
+  borderRadius: 18,
+  overflow: 'hidden',
+  backgroundColor: '#eee',
+},
+postImage: {
+  width: '100%',
+  height: 360,
+  backgroundColor: '#eee',
+},
+postFooterRow: {
+  flexDirection: 'row',
+  gap: 8,
+  marginTop: 14,
+  flexWrap: 'wrap',
+},
+actionPill: {
+  paddingHorizontal: 12,
+  paddingVertical: 8,
+  borderRadius: 999,
+  backgroundColor: '#f1f1f4',
+},
+actionPillActive: {
+  backgroundColor: '#ffe8ef',
+},
+actionPillText: {
+  fontSize: 12,
+  fontWeight: '700',
+  color: '#444',
+},
+actionPillTextActive: {
+  color: '#d6336c',
+},
 });
