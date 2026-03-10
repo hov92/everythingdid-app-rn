@@ -195,7 +195,7 @@ function TeaFeedCard({
   onLike: () => void;
   liking: boolean;
 }) {
-  const hasMedia = !!item.imageUrls?.length;
+  const hasImage = !!item.imageUrls?.length;
   const hasVideo = !!item.videoUrls?.length;
   const hasText = !!item.content?.trim();
 
@@ -228,37 +228,37 @@ function TeaFeedCard({
 
       {hasText ? (
         <Text
-          style={[styles.cardContent, (hasMedia || hasVideo) && styles.cardContentWithMedia]}
-          numberOfLines={hasMedia || hasVideo ? 3 : 6}
+          style={[styles.cardContent, (hasImage || hasVideo) && styles.cardContentWithMedia]}
+          numberOfLines={hasImage || hasVideo ? 3 : 6}
         >
           {item.content}
         </Text>
       ) : null}
 
       {hasVideo ? (
-  <View style={styles.mediaWrap}>
-    <Image
-      source={{
-        uri:
-          item.videoPosterUrls?.[0] ||
-          'https://everythingdid.com/wp-content/plugins/buddyboss-platform/bp-templates/bp-nouveau/images/video-placeholder.jpg',
-      }}
-      style={styles.cardImage}
-      resizeMode="cover"
-    />
-    <View style={styles.videoBadge}>
-      <Text style={styles.videoBadgeText}>▶ Video</Text>
-    </View>
-  </View>
-) : hasMedia ? (
-  <View style={styles.mediaWrap}>
-    <Image
-      source={{ uri: item.imageUrls[0] }}
-      style={styles.cardImage}
-      resizeMode="cover"
-    />
-  </View>
-) : null}
+        <View style={styles.mediaWrap}>
+          <Image
+            source={{
+              uri:
+                item.videoPosterUrls?.[0] ||
+                'https://everythingdid.com/wp-content/plugins/buddyboss-platform/bp-templates/bp-nouveau/images/video-placeholder.jpg',
+            }}
+            style={styles.cardImage}
+            resizeMode="cover"
+          />
+          <View style={styles.videoBadge}>
+            <Text style={styles.videoBadgeText}>▶ Video</Text>
+          </View>
+        </View>
+      ) : hasImage ? (
+        <View style={styles.mediaWrap}>
+          <Image
+            source={{ uri: item.imageUrls[0] }}
+            style={styles.cardImage}
+            resizeMode="cover"
+          />
+        </View>
+      ) : null}
 
       <View style={styles.cardActions}>
         <Pressable
