@@ -51,27 +51,29 @@ export default function TeaCreateScreen() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      let mediaIds: number[] = [];
+  let mediaIds: number[] = [];
+  let videoIds: number[] = [];
 
-      if (pickedImage) {
-        setUploadingMedia(true);
-        const mediaId = await uploadWpMedia(pickedImage);
-        setUploadingMedia(false);
-        if (mediaId) mediaIds = [mediaId];
-      }
+  if (pickedImage) {
+    setUploadingMedia(true);
+    const mediaId = await uploadWpMedia(pickedImage);
+    setUploadingMedia(false);
+    if (mediaId) mediaIds = [mediaId];
+  }
 
-      if (pickedVideo) {
-        setUploadingMedia(true);
-        const mediaId = await uploadWpMedia(pickedVideo);
-        setUploadingMedia(false);
-        if (mediaId) mediaIds = [mediaId];
-      }
+  if (pickedVideo) {
+    setUploadingMedia(true);
+    const mediaId = await uploadWpMedia(pickedVideo);
+    setUploadingMedia(false);
+    if (mediaId) videoIds = [mediaId];
+  }
 
-      return createTeaPost({
-        content: content.trim(),
-        mediaIds,
-      });
-    },
+  return createTeaPost({
+    content: content.trim(),
+    mediaIds,
+    videoIds,
+  });
+},
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['tea-posts'] });
       router.back();

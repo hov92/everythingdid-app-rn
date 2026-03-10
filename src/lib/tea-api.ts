@@ -118,40 +118,28 @@ function pickActivityAuthorId(item: any): number {
 function pickActivityImageUrls(item: any): string[] {
   const urls: string[] = [];
 
-  const mediaArr = Array.isArray(item?.bbp_media)
+  const mediaArr = Array.isArray(item?.bp_media_ids)
+    ? item.bp_media_ids
+    : Array.isArray(item?.bbp_media)
     ? item.bbp_media
     : Array.isArray(item?.bp_media)
     ? item.bp_media
     : Array.isArray(item?.media)
     ? item.media
-    : Array.isArray(item?.medias)
-    ? item.medias
     : [];
 
   for (const media of mediaArr) {
-    const mime = String(media?.mime_type ?? media?.type ?? '').toLowerCase();
-    if (mime.startsWith('video/')) continue;
-
     const url = String(
-      media?.full ??
-        media?.source_url ??
-        media?.image ??
-        media?.url ??
+      media?.attachment_data?.thumb ??
+        media?.attachment_data?.medium ??
         media?.attachment_data?.full ??
+        media?.url ??
+        media?.source_url ??
         ''
     ).trim();
 
     if (url) urls.push(url);
   }
-
-  const single = String(
-    item?.bbp_media?.full ??
-      item?.bp_media?.full ??
-      item?.media_url ??
-      ''
-  ).trim();
-
-  if (single) urls.push(single);
 
   return [...new Set(urls)];
 }
@@ -159,42 +147,30 @@ function pickActivityImageUrls(item: any): string[] {
 function pickActivityVideoUrls(item: any): string[] {
   const urls: string[] = [];
 
-  const candidates = [
-    ...(Array.isArray(item?.bb_videos) ? item.bb_videos : []),
-    ...(Array.isArray(item?.bp_videos) ? item.bp_videos : []),
-    ...(Array.isArray(item?.videos) ? item.videos : []),
-    ...(Array.isArray(item?.video) ? item.video : []),
-    ...(Array.isArray(item?.bbp_media) ? item.bbp_media : []),
-    ...(Array.isArray(item?.bp_media) ? item.bp_media : []),
-    ...(Array.isArray(item?.media) ? item.media : []),
-  ];
+  const videoArr = Array.isArray(item?.bp_videos)
+    ? item.bp_videos
+    : Array.isArray(item?.bb_videos)
+    ? item.bb_videos
+    : Array.isArray(item?.videos)
+    ? item.videos
+    : [];
 
-  for (const video of candidates) {
-    const mime = String(video?.mime_type ?? video?.type ?? '').toLowerCase();
+  for (const video of videoArr) {
+    const attachment = video?.attachment_data ?? {};
+
     const url = String(
-      video?.full ??
+      attachment?.source_url ??
+        attachment?.full ??
+        attachment?.url ??
         video?.source_url ??
         video?.video_url ??
-        video?.url ??
-        video?.attachment_data?.full ??
         ''
     ).trim();
 
-    const looksLikeVideo =
-      mime.startsWith('video/') ||
-      /\.(mp4|mov|m4v|webm)$/i.test(url);
-
-    if (looksLikeVideo && url) urls.push(url);
+    if (url) {
+      urls.push(url);
+    }
   }
-
-  const single = String(
-    item?.bb_videos?.full ??
-      item?.bp_videos?.full ??
-      item?.video_url ??
-      ''
-  ).trim();
-
-  if (single) urls.push(single);
 
   return [...new Set(urls)];
 }
@@ -207,7 +183,10 @@ function extractActivityText(item: any): string {
   const contentString =
     typeof item?.content === 'string' ? item.content : '';
 
-  return htmlToText(contentRendered || contentRaw || contentString).trim();
+  const text = htmlToText(contentRendered || contentRaw || contentString).trim();
+
+  if (text === '.') return '';
+  return text;
 }
 
 function mapActivityItem(item: any): TeaPost {
@@ -320,18 +299,24 @@ export async function fetchTeaComments(activityId: number | string): Promise<Tea
 export async function createTeaPost({
   content,
   mediaIds = [],
+  videoIds = [],
 }: {
   content: string;
   mediaIds?: number[];
+  videoIds?: number[];
 }) {
   const trimmed = String(content).trim();
 
   const payload: Record<string, any> = {
-    content: trimmed || (mediaIds.length ? '.' : ''),
+    content: trimmed || (mediaIds.length || videoIds.length ? '.' : ''),
   };
 
   if (mediaIds.length) {
-    payload.bbp_media = mediaIds;
+    payload.bp_media_ids = mediaIds;
+  }
+
+  if (videoIds.length) {
+    payload.bp_videos = videoIds;
   }
 
   console.log('CREATE TEA PAYLOAD', payload);
