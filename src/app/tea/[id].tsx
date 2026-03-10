@@ -52,11 +52,8 @@ export default function TeaDetailScreen() {
   });
 
   const favoriteMutation = useMutation({
-    mutationFn: ({
-      favorite,
-    }: {
-      favorite: boolean;
-    }) => toggleTeaFavorite({ activityId, favorite }),
+    mutationFn: ({ favorite }: { favorite: boolean }) =>
+      toggleTeaFavorite({ activityId, favorite }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['tea-post', activityId] });
       await queryClient.invalidateQueries({ queryKey: ['tea-posts'] });
@@ -162,8 +159,8 @@ export default function TeaDetailScreen() {
   }
 
   const hasText = !!post.content?.trim();
-const hasImage = !!post.imageUrls?.length;
-const hasVideo = !!post.videoUrls?.length;
+  const hasImage = !!post.imageUrls?.length;
+  const hasVideo = !!post.videoUrls?.length;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
@@ -207,21 +204,36 @@ const hasVideo = !!post.videoUrls?.length;
               </Pressable>
 
               <View style={styles.postCard}>
-                <View style={styles.metaRow}>
-                  <Text style={styles.metaTextStrong}>{post.author}</Text>
-                  <Text style={styles.metaDot}>•</Text>
-                  <Text style={styles.metaText}>{formatTime(post.time)}</Text>
-                  <Text style={styles.metaDot}>•</Text>
-                  <Text style={styles.metaText}>{comments.length} comments</Text>
+                <View style={styles.postTopRow}>
+                  <View style={styles.authorRow}>
+                    <View style={styles.avatar} />
+                    <View style={styles.authorTextWrap}>
+                      <Text style={styles.authorName}>{post.author}</Text>
+                      <Text style={styles.metaText}>{formatTime(post.time)}</Text>
+                    </View>
+                  </View>
+
+                  <Pressable style={styles.followMiniBtn}>
+                    <Text style={styles.followMiniBtnText}>Follow</Text>
+                  </Pressable>
                 </View>
 
-                <Text style={styles.postContent}>{post.content}</Text>
+                {hasText ? (
+                  <Text style={styles.postContent}>{post.content}</Text>
+                ) : null}
 
-                {post.imageUrls.length ? (
-                  <Image
-                    source={{ uri: post.imageUrls[0] }}
-                    style={styles.postImage}
-                  />
+                {hasVideo ? (
+                  <View style={styles.mediaWrap}>
+                    <DetailVideo uri={post.videoUrls[0]} />
+                  </View>
+                ) : hasImage ? (
+                  <View style={styles.mediaWrap}>
+                    <Image
+                      source={{ uri: post.imageUrls[0] }}
+                      style={styles.postImage}
+                      resizeMode="cover"
+                    />
+                  </View>
                 ) : null}
 
                 <View style={styles.postFooterRow}>
@@ -231,25 +243,34 @@ const hasVideo = !!post.videoUrls?.length;
                         router.push('/login');
                         return;
                       }
+
                       favoriteMutation.mutate({
                         favorite: !post.viewerHasLiked,
                       });
                     }}
                     style={[
-                      styles.likeChip,
-                      post.viewerHasLiked && styles.likeChipActive,
+                      styles.actionPill,
+                      post.viewerHasLiked && styles.actionPillActive,
                     ]}
                   >
                     <Text
                       style={[
-                        styles.likeChipText,
-                        post.viewerHasLiked && styles.likeChipTextActive,
+                        styles.actionPillText,
+                        post.viewerHasLiked && styles.actionPillTextActive,
                       ]}
                     >
                       {favoriteMutation.isPending
                         ? 'Saving...'
                         : `♥ ${post.favoriteCount ?? 0}`}
                     </Text>
+                  </Pressable>
+
+                  <View style={styles.actionPill}>
+                    <Text style={styles.actionPillText}>💬 {comments.length}</Text>
+                  </View>
+
+                  <Pressable style={styles.actionPill}>
+                    <Text style={styles.actionPillText}>↻ Repost</Text>
                   </Pressable>
                 </View>
               </View>
@@ -377,10 +398,12 @@ function TeaCommentCard({
     </View>
   );
 }
+
 function DetailVideo({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri, (p) => {
-    p.loop = false;
+    p.loop = true;
     p.muted = false;
+    p.play();
   });
 
   return (
@@ -456,10 +479,42 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ececf1',
   },
-  metaRow: {
+  postTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+    alignItems: 'center',
+  },
+  authorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    gap: 10,
+    flex: 1,
+  },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    backgroundColor: '#ececf1',
+  },
+  authorTextWrap: {
+    flex: 1,
+  },
+  authorName: {
+    color: '#222',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  followMiniBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#ececf1',
+  },
+  followMiniBtnText: {
+    color: '#333',
+    fontSize: 12,
+    fontWeight: '700',
   },
   metaText: {
     fontSize: 12,
@@ -482,22 +537,38 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     color: '#333',
   },
-
-  likeChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  mediaWrap: {
+    marginTop: 12,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#eee',
+  },
+  postImage: {
+    width: '100%',
+    height: 360,
+    backgroundColor: '#eee',
+  },
+  postFooterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+    flexWrap: 'wrap',
+  },
+  actionPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: '#f1f1f4',
   },
-  likeChipActive: {
+  actionPillActive: {
     backgroundColor: '#ffe8ef',
   },
-  likeChipText: {
+  actionPillText: {
     fontSize: 12,
     fontWeight: '700',
     color: '#444',
   },
-  likeChipTextActive: {
+  actionPillTextActive: {
     color: '#d6336c',
   },
   commentHeader: {
@@ -661,75 +732,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-  postTopRow: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  gap: 10,
-  alignItems: 'center',
-},
-authorRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 10,
-  flex: 1,
-},
-avatar: {
-  width: 42,
-  height: 42,
-  borderRadius: 999,
-  backgroundColor: '#ececf1',
-},
-authorTextWrap: {
-  flex: 1,
-},
-authorName: {
-  color: '#222',
-  fontSize: 15,
-  fontWeight: '800',
-},
-followMiniBtn: {
-  paddingHorizontal: 12,
-  paddingVertical: 8,
-  borderRadius: 999,
-  backgroundColor: '#ececf1',
-},
-followMiniBtnText: {
-  color: '#333',
-  fontSize: 12,
-  fontWeight: '700',
-},
-mediaWrap: {
-  marginTop: 12,
-  borderRadius: 18,
-  overflow: 'hidden',
-  backgroundColor: '#eee',
-},
-postImage: {
-  width: '100%',
-  height: 360,
-  backgroundColor: '#eee',
-},
-postFooterRow: {
-  flexDirection: 'row',
-  gap: 8,
-  marginTop: 14,
-  flexWrap: 'wrap',
-},
-actionPill: {
-  paddingHorizontal: 12,
-  paddingVertical: 8,
-  borderRadius: 999,
-  backgroundColor: '#f1f1f4',
-},
-actionPillActive: {
-  backgroundColor: '#ffe8ef',
-},
-actionPillText: {
-  fontSize: 12,
-  fontWeight: '700',
-  color: '#444',
-},
-actionPillTextActive: {
-  color: '#d6336c',
-},
 });

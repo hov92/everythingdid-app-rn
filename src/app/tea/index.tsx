@@ -236,18 +236,29 @@ function TeaFeedCard({
       ) : null}
 
       {hasVideo ? (
-        <View style={styles.mediaWrap}>
-          <FeedVideo uri={item.videoUrls[0]} />
-        </View>
-      ) : hasMedia ? (
-        <View style={styles.mediaWrap}>
-          <Image
-            source={{ uri: item.imageUrls[0] }}
-            style={styles.cardImage}
-            resizeMode="cover"
-          />
-        </View>
-      ) : null}
+  <View style={styles.mediaWrap}>
+    <Image
+      source={{
+        uri:
+          item.videoPosterUrls?.[0] ||
+          'https://everythingdid.com/wp-content/plugins/buddyboss-platform/bp-templates/bp-nouveau/images/video-placeholder.jpg',
+      }}
+      style={styles.cardImage}
+      resizeMode="cover"
+    />
+    <View style={styles.videoBadge}>
+      <Text style={styles.videoBadgeText}>▶ Video</Text>
+    </View>
+  </View>
+) : hasMedia ? (
+  <View style={styles.mediaWrap}>
+    <Image
+      source={{ uri: item.imageUrls[0] }}
+      style={styles.cardImage}
+      resizeMode="cover"
+    />
+  </View>
+) : null}
 
       <View style={styles.cardActions}>
         <Pressable
@@ -574,5 +585,20 @@ cardImage: {
   width: '100%',
   height: 320,
   backgroundColor: '#eee',
+},
+videoBadge: {
+  position: 'absolute',
+  right: 12,
+  bottom: 12,
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 999,
+  backgroundColor: 'rgba(0,0,0,0.65)',
+},
+
+videoBadgeText: {
+  color: '#fff',
+  fontWeight: '700',
+  fontSize: 12,
 },
 });

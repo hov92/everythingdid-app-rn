@@ -13,6 +13,9 @@ export type TeaPost = {
   commentCount: number;
   imageUrls: string[];
   videoUrls: string[];
+  videoPosterUrls?: string[];
+  videoAttachmentIds: number[];
+  
 };
 
 export type TeaComment = {
@@ -156,14 +159,40 @@ function pickActivityVideoUrls(item: any): string[] {
     : [];
 
   for (const video of videoArr) {
+    const url = String(
+      video?.download_url ??
+        video?.source_url ??
+        video?.video_url ??
+        ''
+    ).trim();
+
+    if (url) {
+      urls.push(url);
+    }
+  }
+
+  return [...new Set(urls)];
+}
+
+function pickActivityVideoPosterUrls(item: any): string[] {
+  const urls: string[] = [];
+
+  const videoArr = Array.isArray(item?.bp_videos)
+    ? item.bp_videos
+    : Array.isArray(item?.bb_videos)
+    ? item.bb_videos
+    : Array.isArray(item?.videos)
+    ? item.videos
+    : [];
+
+  for (const video of videoArr) {
     const attachment = video?.attachment_data ?? {};
 
     const url = String(
-      attachment?.source_url ??
+      attachment?.video_activity_thumb ??
+        attachment?.video_popup_thumb ??
+        attachment?.thumb ??
         attachment?.full ??
-        attachment?.url ??
-        video?.source_url ??
-        video?.video_url ??
         ''
     ).trim();
 
@@ -184,9 +213,7 @@ function extractActivityText(item: any): string {
     typeof item?.content === 'string' ? item.content : '';
 
   const text = htmlToText(contentRendered || contentRaw || contentString).trim();
-
-  if (text === '.') return '';
-  return text;
+  return text === '.' ? '' : text;
 }
 
 function mapActivityItem(item: any): TeaPost {
@@ -195,7 +222,10 @@ function mapActivityItem(item: any): TeaPost {
   return {
     id: Number(item?.id ?? 0),
     content: extractActivityText(item),
-    author: pickActivityAuthorName(item) || `User ${authorId || ''}`.trim() || 'Unknown',
+    author:
+      pickActivityAuthorName(item) ||
+      `User ${authorId || ''}`.trim() ||
+      'Unknown',
     authorId,
     time: String(item?.date ?? item?.date_gmt ?? item?.modified ?? ''),
     favoriteCount: Number(item?.favorite_count ?? item?.favorites_count ?? 0),
@@ -208,6 +238,8 @@ function mapActivityItem(item: any): TeaPost {
     commentCount: Number(item?.comment_count ?? item?.comments_count ?? 0),
     imageUrls: pickActivityImageUrls(item),
     videoUrls: pickActivityVideoUrls(item),
+    videoPosterUrls: pickActivityVideoPosterUrls(item),
+    videoAttachmentIds: pickActivityVideoAttachmentIds(item),
   };
 }
 
@@ -383,4 +415,22 @@ export async function toggleTeaFavorite({
   return apiPost(`/activity/${activityId}/favorite`, {
     favorite,
   });
+}
+function pickActivityVideoAttachmentIds(item: any): number[] {
+  const ids: number[] = [];
+
+  const videoArr = Array.isArray(item?.bp_videos)
+    ? item.bp_videos
+    : Array.isArray(item?.bb_videos)
+    ? item.bb_videos
+    : Array.isArray(item?.videos)
+    ? item.videos
+    : [];
+
+  for (const video of videoArr) {
+    const id = Number(video?.attachment_id ?? 0);
+    if (id) ids.push(id);
+  }
+
+  return [...new Set(ids)];
 }
