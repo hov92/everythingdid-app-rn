@@ -112,7 +112,8 @@ export default function TeaDetailScreen() {
   const comments = commentsQuery.data ?? [];
   const busy = createCommentMutation.isPending;
   const canComment = commentText.trim().length > 0 && !busy;
-  const canSaveEdit = editingText.trim().length > 0 && !editCommentMutation.isPending;
+  const canSaveEdit =
+    editingText.trim().length > 0 && !editCommentMutation.isPending;
 
   function handleComment() {
     if (!token) {
@@ -206,7 +207,15 @@ export default function TeaDetailScreen() {
               <View style={styles.postCard}>
                 <View style={styles.postTopRow}>
                   <View style={styles.authorRow}>
-                    <View style={styles.avatar} />
+                    {post.authorAvatarUrl ? (
+                      <Image
+                        source={{ uri: post.authorAvatarUrl }}
+                        style={styles.avatar}
+                      />
+                    ) : (
+                      <View style={styles.avatar} />
+                    )}
+
                     <View style={styles.authorTextWrap}>
                       <Text style={styles.authorName}>{post.author}</Text>
                       <Text style={styles.metaText}>{formatTime(post.time)}</Text>
@@ -218,9 +227,7 @@ export default function TeaDetailScreen() {
                   </Pressable>
                 </View>
 
-                {hasText ? (
-                  <Text style={styles.postContent}>{post.content}</Text>
-                ) : null}
+                {hasText ? <Text style={styles.postContent}>{post.content}</Text> : null}
 
                 {hasVideo ? (
                   <View style={styles.mediaWrap}>
@@ -345,9 +352,16 @@ function TeaCommentCard({
     <View style={styles.commentCard}>
       <View style={styles.commentTopRow}>
         <View style={styles.commentMetaWrap}>
-          <Text style={styles.metaTextStrong}>{item.author}</Text>
-          <Text style={styles.metaDot}>•</Text>
-          <Text style={styles.metaText}>{formatTime(item.time)}</Text>
+          {item.authorAvatarUrl ? (
+            <Image source={{ uri: item.authorAvatarUrl }} style={styles.commentAvatar} />
+          ) : (
+            <View style={styles.commentAvatar} />
+          )}
+
+          <View style={styles.commentMetaTextWrap}>
+            <Text style={styles.metaTextStrong}>{item.author}</Text>
+            <Text style={styles.metaText}>{formatTime(item.time)}</Text>
+          </View>
         </View>
 
         {canManage && !editing ? (
@@ -526,11 +540,6 @@ const styles = StyleSheet.create({
     color: '#333',
     fontWeight: '700',
   },
-  metaDot: {
-    fontSize: 12,
-    color: '#a0a0a0',
-    marginHorizontal: 6,
-  },
   postContent: {
     marginTop: 14,
     fontSize: 15,
@@ -596,7 +605,16 @@ const styles = StyleSheet.create({
   commentMetaWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    flex: 1,
+  },
+  commentAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: '#ececf1',
+    marginRight: 10,
+  },
+  commentMetaTextWrap: {
     flex: 1,
   },
   commentActionRow: {

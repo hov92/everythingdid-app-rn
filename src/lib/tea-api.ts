@@ -1,21 +1,22 @@
 import { useAuthStore } from '../store/auth-store';
 
 const API_BASE = 'https://everythingdid.com/wp-json/buddyboss/v1';
+const WP_MEDIA_BASE = 'https://everythingdid.com/wp-json/wp/v2/media';
 
 export type TeaPost = {
   id: number;
   content: string;
   author: string;
   authorId?: number;
+  authorAvatarUrl?: string;
   time: string;
   favoriteCount?: number;
   viewerHasLiked?: boolean;
   commentCount: number;
   imageUrls: string[];
   videoUrls: string[];
-  videoPosterUrls?: string[];
+  videoPosterUrls: string[];
   videoAttachmentIds: number[];
-  
 };
 
 export type TeaComment = {
@@ -24,6 +25,7 @@ export type TeaComment = {
   text: string;
   author: string;
   authorId?: number;
+  authorAvatarUrl?: string;
   time: string;
 };
 
@@ -103,6 +105,21 @@ async function apiDelete(path: string) {
   return raw;
 }
 
+async function fetchWpMediaSourceUrl(attachmentId: number): Promise<string | null> {
+  if (!attachmentId) return null;
+
+  const res = await fetch(`${WP_MEDIA_BASE}/${attachmentId}`, {
+    headers: {
+      ...(await authedHeaders()),
+    },
+  });
+
+  const raw = await res.json().catch(() => null);
+  if (!res.ok) return null;
+
+  return String(raw?.source_url ?? '').trim() || null;
+}
+
 function pickActivityAuthorName(item: any): string {
   return String(
     item?.user_name ??
@@ -116,6 +133,17 @@ function pickActivityAuthorName(item: any): string {
 
 function pickActivityAuthorId(item: any): number {
   return Number(item?.user_id ?? item?.author ?? item?.id_user ?? 0);
+}
+
+function pickActivityAvatarUrl(item: any): string {
+  return String(
+    item?.user_avatar?.thumb ??
+      item?.user_avatar?.full ??
+      item?.avatar ??
+      item?.author_avatar ??
+      item?.user?.avatar ??
+      ''
+  ).trim();
 }
 
 function pickActivityImageUrls(item: any): string[] {
@@ -147,8 +175,8 @@ function pickActivityImageUrls(item: any): string[] {
   return [...new Set(urls)];
 }
 
-function pickActivityVideoUrls(item: any): string[] {
-  const urls: string[] = [];
+function pickActivityVideoAttachmentIds(item: any): number[] {
+  const ids: number[] = [];
 
   const videoArr = Array.isArray(item?.bp_videos)
     ? item.bp_videos
@@ -159,19 +187,11 @@ function pickActivityVideoUrls(item: any): string[] {
     : [];
 
   for (const video of videoArr) {
-    const url = String(
-      video?.download_url ??
-        video?.source_url ??
-        video?.video_url ??
-        ''
-    ).trim();
-
-    if (url) {
-      urls.push(url);
-    }
+    const id = Number(video?.attachment_id ?? 0);
+    if (id) ids.push(id);
   }
 
-  return [...new Set(urls)];
+  return [...new Set(ids)];
 }
 
 function pickActivityVideoPosterUrls(item: any): string[] {
@@ -196,12 +216,21 @@ function pickActivityVideoPosterUrls(item: any): string[] {
         ''
     ).trim();
 
-    if (url) {
-      urls.push(url);
-    }
+    if (url) urls.push(url);
   }
 
   return [...new Set(urls)];
+}
+
+async function pickActivityVideoUrls(item: any): Promise<string[]> {
+  const attachmentIds = pickActivityVideoAttachmentIds(item);
+  if (!attachmentIds.length) return [];
+
+  const urls = await Promise.all(
+    attachmentIds.map((id) => fetchWpMediaSourceUrl(id))
+  );
+
+  return [...new Set(urls.filter(Boolean) as string[])];
 }
 
 function extractActivityText(item: any): string {
@@ -216,7 +245,7 @@ function extractActivityText(item: any): string {
   return text === '.' ? '' : text;
 }
 
-function mapActivityItem(item: any): TeaPost {
+async function mapActivityItem(item: any): Promise<TeaPost> {
   const authorId = pickActivityAuthorId(item);
 
   return {
@@ -227,6 +256,7 @@ function mapActivityItem(item: any): TeaPost {
       `User ${authorId || ''}`.trim() ||
       'Unknown',
     authorId,
+    authorAvatarUrl: pickActivityAvatarUrl(item),
     time: String(item?.date ?? item?.date_gmt ?? item?.modified ?? ''),
     favoriteCount: Number(item?.favorite_count ?? item?.favorites_count ?? 0),
     viewerHasLiked:
@@ -237,7 +267,7 @@ function mapActivityItem(item: any): TeaPost {
         : false,
     commentCount: Number(item?.comment_count ?? item?.comments_count ?? 0),
     imageUrls: pickActivityImageUrls(item),
-    videoUrls: pickActivityVideoUrls(item),
+    videoUrls: await pickActivityVideoUrls(item),
     videoPosterUrls: pickActivityVideoPosterUrls(item),
     videoAttachmentIds: pickActivityVideoAttachmentIds(item),
   };
@@ -275,32 +305,36 @@ export async function fetchTeaPosts(params?: {
     ? raw.activities
     : [];
 
-  return arr
-    .filter((item: any) => {
-      const id = Number(item?.id ?? 0);
-      const type = String(item?.type ?? '').toLowerCase();
-      const content = extractActivityText(item).trim().toLowerCase();
+  const filtered = arr.filter((item: any) => {
+    const id = Number(item?.id ?? 0);
+    const type = String(item?.type ?? '').toLowerCase();
+    const content = extractActivityText(item).trim().toLowerCase();
+    const hasImage = pickActivityImageUrls(item).length > 0;
+    const hasVideo = pickActivityVideoAttachmentIds(item).length > 0;
 
-      if (!id) return false;
-      if (type !== 'activity_update') return false;
-      if (!content && !pickActivityImageUrls(item).length && !pickActivityVideoUrls(item).length) {
-        return false;
-      }
-      if (content === 'reshared') return false;
-      if (content.includes('view original')) return false;
-      if (content.includes('posted an update')) return false;
+    if (!id) return false;
+    if (type !== 'activity_update') return false;
+    if (content === 'reshared') return false;
+    if (content.includes('view original')) return false;
+    if (content.includes('posted an update')) return false;
+    if (!content && !hasImage && !hasVideo) return false;
 
-      return true;
-    })
-    .map(mapActivityItem);
+    return true;
+  });
+
+  return Promise.all(filtered.map(mapActivityItem));
 }
 
-export async function fetchTeaPostDetail(activityId: number | string): Promise<TeaPost> {
+export async function fetchTeaPostDetail(
+  activityId: number | string
+): Promise<TeaPost> {
   const raw = await apiGet(`/activity/${activityId}`);
   return mapActivityItem(raw);
 }
 
-export async function fetchTeaComments(activityId: number | string): Promise<TeaComment[]> {
+export async function fetchTeaComments(
+  activityId: number | string
+): Promise<TeaComment[]> {
   const raw = await apiGet(`/activity/${activityId}`);
   const comments = Array.isArray(raw?.comments)
     ? raw.comments
@@ -324,6 +358,13 @@ export async function fetchTeaComments(activityId: number | string): Promise<Tea
           ''
       ).trim() || 'Unknown',
     authorId: Number(c?.user_id ?? c?.author ?? 0),
+    authorAvatarUrl: String(
+      c?.user_avatar?.thumb ??
+        c?.user_avatar?.full ??
+        c?.avatar ??
+        c?.author_avatar ??
+        ''
+    ).trim(),
     time: String(c?.date ?? c?.date_gmt ?? c?.modified ?? ''),
   }));
 }
@@ -351,12 +392,7 @@ export async function createTeaPost({
     payload.bp_videos = videoIds;
   }
 
-  console.log('CREATE TEA PAYLOAD', payload);
-
-  const response = await apiPost('/activity', payload);
-  console.log('CREATE TEA RESPONSE', response);
-
-  return response;
+  return apiPost('/activity', payload);
 }
 
 export async function updateTeaPost({
@@ -415,22 +451,4 @@ export async function toggleTeaFavorite({
   return apiPost(`/activity/${activityId}/favorite`, {
     favorite,
   });
-}
-function pickActivityVideoAttachmentIds(item: any): number[] {
-  const ids: number[] = [];
-
-  const videoArr = Array.isArray(item?.bp_videos)
-    ? item.bp_videos
-    : Array.isArray(item?.bb_videos)
-    ? item.bb_videos
-    : Array.isArray(item?.videos)
-    ? item.videos
-    : [];
-
-  for (const video of videoArr) {
-    const id = Number(video?.attachment_id ?? 0);
-    if (id) ids.push(id);
-  }
-
-  return [...new Set(ids)];
 }

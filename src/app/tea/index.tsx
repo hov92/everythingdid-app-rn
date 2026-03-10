@@ -14,7 +14,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { fetchTeaPosts, TeaPost, toggleTeaFavorite } from '../../lib/tea-api';
 import { useAuthStore } from '../../store/auth-store';
 
@@ -73,13 +72,13 @@ export default function TeaHomeScreen() {
           </View>
         </View>
 
-        {/* <TextInput
+        <TextInput
           value={search}
           onChangeText={setSearch}
           placeholder="Search tea posts"
           placeholderTextColor="#8b8b8b"
           style={styles.search}
-        /> */}
+        />
 
         <ScrollView
           horizontal
@@ -120,7 +119,13 @@ export default function TeaHomeScreen() {
           </Pressable>
         </View>
 
-        
+        <Pressable
+          onPress={() => router.push('/tea/create')}
+          style={styles.quickCompose}
+        >
+          <View style={styles.quickAvatar} />
+          <Text style={styles.quickComposeText}>Share some tea...</Text>
+        </Pressable>
       </View>
     ),
     [search]
@@ -214,7 +219,12 @@ function TeaFeedCard({
           }}
           style={styles.authorRow}
         >
-          <View style={styles.avatar} />
+          {item.authorAvatarUrl ? (
+            <Image source={{ uri: item.authorAvatarUrl }} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatar} />
+          )}
+
           <View style={styles.authorTextWrap}>
             <Text style={styles.authorName}>{item.author}</Text>
             <Text style={styles.metaText}>{formatTime(item.time)}</Text>
@@ -228,7 +238,10 @@ function TeaFeedCard({
 
       {hasText ? (
         <Text
-          style={[styles.cardContent, (hasImage || hasVideo) && styles.cardContentWithMedia]}
+          style={[
+            styles.cardContent,
+            (hasImage || hasVideo) && styles.cardContentWithMedia,
+          ]}
           numberOfLines={hasImage || hasVideo ? 3 : 6}
         >
           {item.content}
@@ -300,22 +313,6 @@ function TeaFeedCard({
         </Pressable>
       </View>
     </Pressable>
-  );
-}
-
-function FeedVideo({ uri }: { uri: string }) {
-  const player = useVideoPlayer(uri, (p) => {
-    p.loop = true;
-    p.muted = true;
-  });
-
-  return (
-    <VideoView
-      player={player}
-      style={styles.cardImage}
-      nativeControls={false}
-      contentFit="cover"
-    />
   );
 }
 
@@ -519,7 +516,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  
+  cardContent: {
+    marginTop: 12,
+    color: '#222',
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  cardContentWithMedia: {
+    marginBottom: 0,
+  },
+  mediaWrap: {
+    marginTop: 12,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#eee',
+  },
+  cardImage: {
+    width: '100%',
+    height: 320,
+    backgroundColor: '#eee',
+  },
+  videoBadge: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  videoBadgeText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
   cardActions: {
     flexDirection: 'row',
     gap: 8,
@@ -563,42 +593,4 @@ const styles = StyleSheet.create({
     color: '#777',
     textAlign: 'center',
   },
-  mediaWrap: {
-  marginTop: 12,
-  borderRadius: 18,
-  overflow: 'hidden',
-  backgroundColor: '#eee',
-},
-
-cardContent: {
-  marginTop: 12,
-  color: '#222',
-  fontSize: 16,
-  lineHeight: 24,
-},
-
-cardContentWithMedia: {
-  marginBottom: 0,
-},
-
-cardImage: {
-  width: '100%',
-  height: 320,
-  backgroundColor: '#eee',
-},
-videoBadge: {
-  position: 'absolute',
-  right: 12,
-  bottom: 12,
-  paddingHorizontal: 10,
-  paddingVertical: 6,
-  borderRadius: 999,
-  backgroundColor: 'rgba(0,0,0,0.65)',
-},
-
-videoBadgeText: {
-  color: '#fff',
-  fontWeight: '700',
-  fontSize: 12,
-},
 });
