@@ -9,12 +9,12 @@ export default function TeaLayout() {
       }}
     >
       <Stack.Screen name="index" />
+      <Stack.Screen name="(tea-tabs)" />
+      <Stack.Screen name="post/[id]" />
+      <Stack.Screen name="profile/[id]" />
       <Stack.Screen name="following" />
       <Stack.Screen name="explore" />
       <Stack.Screen name="create" />
-      <Stack.Screen name="new-post" />
-      <Stack.Screen name="post/[id]" />
-      <Stack.Screen name="profile/[id]" />
     </Stack>
   );
 }

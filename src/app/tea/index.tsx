@@ -57,7 +57,7 @@ const TeaFeedCard = React.memo(function TeaFeedCard({
   return (
     <Pressable
       style={styles.card}
-      onPress={() => router.push(`/tea/${item.id}`)}
+      onPress={() => router.push(`/tea/post/${item.id}`)}
     >
       <View style={styles.cardTopRow}>
         <Pressable
@@ -152,7 +152,7 @@ const TeaFeedCard = React.memo(function TeaFeedCard({
         <Pressable
           onPress={(e) => {
             e.stopPropagation();
-            router.push(`/tea/${item.id}`);
+            router.push(`/tea/post/${item.id}`);
           }}
           style={styles.actionPill}
         >
@@ -240,12 +240,12 @@ export default function TeaHomeScreen() {
               <Text style={styles.iconBtnText}>⌕</Text>
             </Pressable>
 
-            <Pressable
+            {/* <Pressable
               onPress={() => router.push('/tea/create')}
               style={styles.newBtn}
             >
               <Text style={styles.newBtnText}>New</Text>
-            </Pressable>
+            </Pressable> */}
           </View>
         </View>
 
@@ -339,6 +339,12 @@ export default function TeaHomeScreen() {
           />
         }
       />
+      <Pressable
+  onPress={() => router.push('/tea/create')}
+  style={styles.fab}
+>
+  <Text style={styles.fabText}>+</Text>
+</Pressable>
     </SafeAreaView>
   );
 }
@@ -586,4 +592,26 @@ const styles = StyleSheet.create({
     color: '#777',
     textAlign: 'center',
   },
+  fab: {
+  position: 'absolute',
+  right: 18,
+  bottom: 110,
+  width: 56,
+  height: 56,
+  borderRadius: 999,
+  backgroundColor: '#111',
+  alignItems: 'center',
+  justifyContent: 'center',
+  shadowColor: '#000',
+  shadowOpacity: 0.18,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 6 },
+  elevation: 8,
+},
+fabText: {
+  color: '#fff',
+  fontSize: 28,
+  fontWeight: '800',
+  lineHeight: 30,
+},
 });

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import {
   ActivityIndicator,
   Alert,
@@ -157,7 +158,8 @@ export default function TeaPostDetailScreen() {
     );
   }
 
-  const hasMedia = !!post.imageUrls?.length;
+  const hasImage = !!post.imageUrls?.length;
+  const hasVideo = !!post.videoUrls?.length;
   const hasText = !!post.content?.trim();
 
   return (
@@ -204,7 +206,15 @@ export default function TeaPostDetailScreen() {
               <View style={styles.postCard}>
                 <View style={styles.postTopRow}>
                   <View style={styles.authorRow}>
-                    <View style={styles.avatar} />
+                    {post.authorAvatarUrl ? (
+                      <Image
+                        source={{ uri: post.authorAvatarUrl }}
+                        style={styles.avatar}
+                      />
+                    ) : (
+                      <View style={styles.avatar} />
+                    )}
+
                     <View style={styles.authorTextWrap}>
                       <Text style={styles.authorName}>{post.author}</Text>
                       <Text style={styles.metaText}>{formatTime(post.time)}</Text>
@@ -216,11 +226,13 @@ export default function TeaPostDetailScreen() {
                   </Pressable>
                 </View>
 
-                {hasText ? (
-                  <Text style={styles.postContent}>{post.content}</Text>
-                ) : null}
+                {hasText ? <Text style={styles.postContent}>{post.content}</Text> : null}
 
-                {hasMedia ? (
+                {hasVideo ? (
+                  <View style={styles.mediaWrap}>
+                    <DetailVideo uri={post.videoUrls[0]} />
+                  </View>
+                ) : hasImage ? (
                   <View style={styles.mediaWrap}>
                     <Image
                       source={{ uri: post.imageUrls[0] }}
@@ -338,9 +350,16 @@ function TeaCommentCard({
     <View style={styles.commentCard}>
       <View style={styles.commentTopRow}>
         <View style={styles.commentMetaWrap}>
-          <Text style={styles.commentAuthor}>{item.author}</Text>
-          <Text style={styles.commentMetaDot}>•</Text>
-          <Text style={styles.commentMetaText}>{formatTime(item.time)}</Text>
+          {item.authorAvatarUrl ? (
+            <Image source={{ uri: item.authorAvatarUrl }} style={styles.commentAvatar} />
+          ) : (
+            <View style={styles.commentAvatar} />
+          )}
+
+          <View style={styles.commentMetaTextWrap}>
+            <Text style={styles.commentAuthor}>{item.author}</Text>
+            <Text style={styles.commentMetaText}>{formatTime(item.time)}</Text>
+          </View>
         </View>
 
         {canManage && !editing ? (
@@ -389,6 +408,23 @@ function TeaCommentCard({
         <Text style={styles.commentText}>{item.text}</Text>
       )}
     </View>
+  );
+}
+
+function DetailVideo({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = true;
+    p.muted = false;
+    p.play();
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={styles.postImage}
+      nativeControls
+      contentFit="cover"
+    />
   );
 }
 
@@ -563,7 +599,16 @@ const styles = StyleSheet.create({
   commentMetaWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    flex: 1,
+  },
+  commentAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: '#ececf1',
+    marginRight: 10,
+  },
+  commentMetaTextWrap: {
     flex: 1,
   },
   commentAuthor: {
@@ -572,14 +617,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   commentMetaText: {
+    marginTop: 2,
     fontSize: 12,
     color: '#707070',
     fontWeight: '500',
-  },
-  commentMetaDot: {
-    fontSize: 12,
-    color: '#a0a0a0',
-    marginHorizontal: 6,
   },
   commentActionRow: {
     flexDirection: 'row',

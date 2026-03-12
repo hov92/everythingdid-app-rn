@@ -89,6 +89,12 @@ export default function TeaFollowingScreen() {
           />
         }
       />
+      <Pressable
+  onPress={() => router.push('/tea/create')}
+  style={styles.fab}
+>
+  <Text style={styles.fabText}>+</Text>
+</Pressable>
     </SafeAreaView>
   );
 }
@@ -213,4 +219,26 @@ const styles = StyleSheet.create({
     color: '#777',
     textAlign: 'center',
   },
+  fab: {
+  position: 'absolute',
+  right: 20,
+  bottom: 50,
+  width: 60,
+  height: 60,
+  borderRadius: 999,
+  backgroundColor: '#111',
+  alignItems: 'center',
+  justifyContent: 'center',
+  shadowColor: '#000',
+  shadowOpacity: 0.18,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 6 },
+  elevation: 8,
+},
+fabText: {
+  color: '#fff',
+  fontSize: 30,
+  fontWeight: '800',
+  lineHeight: 32,
+},
 });
