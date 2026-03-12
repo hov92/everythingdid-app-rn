@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { createTeaPost } from '../../lib/tea-api';
+import { createTeaPost, saveTeaPoster } from '../../lib/tea-api';
 import {
   pickSingleImage,
   pickSingleVideo,
@@ -51,31 +51,68 @@ export default function TeaCreateScreen() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-  let mediaIds: number[] = [];
-  let videoIds: number[] = [];
+      let mediaIds: number[] = [];
+      let videoIds: number[] = [];
+      let thumbnailId: number | null = null;
 
-  if (pickedImage) {
-    setUploadingMedia(true);
-    const mediaId = await uploadWpMedia(pickedImage);
-    setUploadingMedia(false);
-    if (mediaId) mediaIds = [mediaId];
-  }
+      try {
+        if (pickedImage) {
+          setUploadingMedia(true);
+          const mediaId = await uploadWpMedia(pickedImage);
+          if (mediaId) mediaIds = [mediaId];
+        }
 
-  if (pickedVideo) {
-    setUploadingMedia(true);
-    const mediaId = await uploadWpMedia(pickedVideo);
-    setUploadingMedia(false);
-    if (mediaId) videoIds = [mediaId];
-  }
+        if (pickedVideo) {
+          setUploadingMedia(true);
 
-  return createTeaPost({
-    content: content.trim(),
-    mediaIds,
-    videoIds,
-  });
-},
+          const videoId = await uploadWpMedia({
+            uri: pickedVideo.uri,
+            fileName: pickedVideo.fileName,
+            mimeType: pickedVideo.mimeType,
+          });
+
+          if (videoId) {
+            videoIds = [videoId];
+          }
+
+          if (pickedVideo.thumbnailUri) {
+            thumbnailId = await uploadWpMedia({
+              uri: pickedVideo.thumbnailUri,
+              fileName: `thumb-${Date.now()}.jpg`,
+              mimeType: 'image/jpeg',
+            });
+          }
+
+          console.log('VIDEO ID', videoId);
+          console.log('VIDEO THUMBNAIL ID', thumbnailId);
+          console.log('LOCAL VIDEO THUMBNAIL URI', pickedVideo.thumbnailUri);
+        }
+
+        const created = await createTeaPost({
+          content: content.trim(),
+          mediaIds,
+          videoIds,
+        });
+
+        if (thumbnailId && created?.id) {
+          try {
+            await saveTeaPoster({
+              activityId: created.id,
+              posterId: thumbnailId,
+            });
+          } catch (e) {
+            console.log('saveTeaPoster failed', e);
+          }
+        }
+
+        return created;
+      } finally {
+        setUploadingMedia(false);
+      }
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['tea-posts'] });
+      await queryClient.invalidateQueries({ queryKey: ['tea-post'] });
       router.back();
     },
     onError: (e: any) => {
@@ -99,6 +136,8 @@ export default function TeaCreateScreen() {
   async function handlePickVideo() {
     try {
       const file = await pickSingleVideo();
+      console.log('PICKED VIDEO', file);
+
       if (file) {
         setPickedImage(null);
         setPickedVideo(file);
@@ -170,8 +209,15 @@ export default function TeaCreateScreen() {
 
         {pickedImage ? (
           <View style={styles.previewWrap}>
-            <Image source={{ uri: pickedImage.uri }} style={styles.previewMedia} />
-            <Pressable onPress={() => setPickedImage(null)} style={styles.removeBtn}>
+            <Image
+              source={{ uri: pickedImage.uri }}
+              style={styles.previewMedia}
+              resizeMode="cover"
+            />
+            <Pressable
+              onPress={() => setPickedImage(null)}
+              style={styles.removeBtn}
+            >
               <Text style={styles.removeBtnText}>Remove</Text>
             </Pressable>
           </View>
@@ -179,8 +225,20 @@ export default function TeaCreateScreen() {
 
         {pickedVideo ? (
           <View style={styles.previewWrap}>
-            <LocalVideoPreview uri={pickedVideo.uri} />
-            <Pressable onPress={() => setPickedVideo(null)} style={styles.removeBtn}>
+            {pickedVideo.thumbnailUri ? (
+              <Image
+                source={{ uri: pickedVideo.thumbnailUri }}
+                style={styles.previewMedia}
+                resizeMode="cover"
+              />
+            ) : (
+              <LocalVideoPreview uri={pickedVideo.uri} />
+            )}
+
+            <Pressable
+              onPress={() => setPickedVideo(null)}
+              style={styles.removeBtn}
+            >
               <Text style={styles.removeBtnText}>Remove</Text>
             </Pressable>
           </View>

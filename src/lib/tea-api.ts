@@ -17,6 +17,8 @@ export type TeaPost = {
   videoUrls: string[];
   videoPosterUrls: string[];
   videoAttachmentIds: number[];
+  edVideoPosterId?: number;
+edVideoPosterUrl?: string;
 };
 
 export type TeaComment = {
@@ -208,15 +210,24 @@ function pickActivityVideoPosterUrls(item: any): string[] {
   for (const video of videoArr) {
     const attachment = video?.attachment_data ?? {};
 
-    const url = String(
-      attachment?.video_activity_thumb ??
-        attachment?.video_popup_thumb ??
-        attachment?.thumb ??
-        attachment?.full ??
-        ''
-    ).trim();
+    const candidates = [
+      attachment?.video_activity_thumb,
+      attachment?.video_popup_thumb,
+      attachment?.thumb,
+      attachment?.full,
+    ]
+      .map((v: any) => String(v || '').trim())
+      .filter(Boolean);
 
-    if (url) urls.push(url);
+    const nonPlaceholder = candidates.find(
+      (url) => !url.includes('video-placeholder.jpg')
+    );
+
+    if (nonPlaceholder) {
+      urls.push(nonPlaceholder);
+    } else if (candidates[0]) {
+      urls.push(candidates[0]);
+    }
   }
 
   return [...new Set(urls)];
@@ -270,6 +281,8 @@ async function mapActivityItem(item: any): Promise<TeaPost> {
     videoUrls: await pickActivityVideoUrls(item),
     videoPosterUrls: pickActivityVideoPosterUrls(item),
     videoAttachmentIds: pickActivityVideoAttachmentIds(item),
+    edVideoPosterId: Number(item?.ed_video_poster_id ?? 0) || undefined,
+edVideoPosterUrl: String(item?.ed_video_poster_url ?? '').trim() || undefined,
   };
 }
 
@@ -450,5 +463,53 @@ export async function toggleTeaFavorite({
 }) {
   return apiPost(`/activity/${activityId}/favorite`, {
     favorite,
+  });
+}
+const ED_API_BASE = 'https://everythingdid.com/wp-json/everythingdid/v1';
+
+async function edApiGet(path: string) {
+  const res = await fetch(`${ED_API_BASE}${path}`, {
+    headers: {
+      ...(await authedHeaders()),
+    },
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || raw?.code || 'Request failed');
+  }
+
+  return raw;
+}
+
+async function edApiPost(path: string, payload: Record<string, any>) {
+  const res = await fetch(`${ED_API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await authedHeaders()),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || raw?.code || 'Request failed');
+  }
+
+  return raw;
+}
+
+export async function saveTeaPoster({
+  activityId,
+  posterId,
+}: {
+  activityId: number | string;
+  posterId: number | string;
+}) {
+  return edApiPost(`/activity/${activityId}/poster`, {
+    poster_id: Number(posterId),
   });
 }

@@ -118,14 +118,6 @@ export default function TeaHomeScreen() {
             <Text style={styles.tabPillText}>Explore</Text>
           </Pressable>
         </View>
-
-        <Pressable
-          onPress={() => router.push('/tea/create')}
-          style={styles.quickCompose}
-        >
-          <View style={styles.quickAvatar} />
-          <Text style={styles.quickComposeText}>Share some tea...</Text>
-        </Pressable>
       </View>
     ),
     [search]
@@ -253,8 +245,9 @@ function TeaFeedCard({
           <Image
             source={{
               uri:
-                item.videoPosterUrls?.[0] ||
-                'https://everythingdid.com/wp-content/plugins/buddyboss-platform/bp-templates/bp-nouveau/images/video-placeholder.jpg',
+  item.edVideoPosterUrl ||
+  item.videoPosterUrls?.[0] ||
+  'https://everythingdid.com/wp-content/plugins/buddyboss-platform/bp-templates/bp-nouveau/images/video-placeholder.jpg',
             }}
             style={styles.cardImage}
             resizeMode="cover"
