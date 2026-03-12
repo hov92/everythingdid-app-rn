@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +25,148 @@ const STORY_PLACEHOLDERS = [
   { id: 's5', label: 'Barbers' },
 ];
 
+const VIDEO_PLACEHOLDER =
+  'https://everythingdid.com/wp-content/plugins/buddyboss-platform/bp-templates/bp-nouveau/images/video-placeholder.jpg';
+
+function formatTime(value: string) {
+  if (!value) return 'Now';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+
+  return d.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+const TeaFeedCard = React.memo(function TeaFeedCard({
+  item,
+  token,
+  onLike,
+  liking,
+}: {
+  item: TeaPost;
+  token: string | null;
+  onLike: () => void;
+  liking: boolean;
+}) {
+  const hasImage = !!item.imageUrls?.length;
+  const hasVideo = !!item.videoAttachmentIds?.length;
+  const hasText = !!item.content?.trim();
+
+  return (
+    <Pressable
+      style={styles.card}
+      onPress={() => router.push(`/tea/${item.id}`)}
+    >
+      <View style={styles.cardTopRow}>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            if (item.authorId) {
+              router.push(`/tea/profile/${item.authorId}`);
+            }
+          }}
+          style={styles.authorRow}
+        >
+          {item.authorAvatarUrl ? (
+            <Image source={{ uri: item.authorAvatarUrl }} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatar} />
+          )}
+
+          <View style={styles.authorTextWrap}>
+            <Text style={styles.authorName}>{item.author}</Text>
+            <Text style={styles.metaText}>{formatTime(item.time)}</Text>
+          </View>
+        </Pressable>
+
+        <Pressable style={styles.followMiniBtn}>
+          <Text style={styles.followMiniBtnText}>Follow</Text>
+        </Pressable>
+      </View>
+
+      {hasText ? (
+        <Text
+          style={[
+            styles.cardContent,
+            (hasImage || hasVideo) && styles.cardContentWithMedia,
+          ]}
+          numberOfLines={hasImage || hasVideo ? 3 : 6}
+        >
+          {item.content}
+        </Text>
+      ) : null}
+
+      {hasVideo ? (
+        <View style={styles.mediaWrap}>
+          <Image
+            source={{
+              uri:
+                item.edVideoPosterUrl ||
+                item.videoPosterUrls?.[0] ||
+                VIDEO_PLACEHOLDER,
+            }}
+            style={styles.cardImage}
+            resizeMode="cover"
+          />
+          <View style={styles.videoBadge}>
+            <Text style={styles.videoBadgeText}>▶ Video</Text>
+          </View>
+        </View>
+      ) : hasImage ? (
+        <View style={styles.mediaWrap}>
+          <Image
+            source={{ uri: item.imageUrls[0] }}
+            style={styles.cardImage}
+            resizeMode="cover"
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.cardActions}>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            if (!token) {
+              router.push('/login');
+              return;
+            }
+            onLike();
+          }}
+          style={[
+            styles.actionPill,
+            item.viewerHasLiked && styles.actionPillActive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.actionPillText,
+              item.viewerHasLiked && styles.actionPillTextActive,
+            ]}
+          >
+            {liking ? 'Saving...' : `♥ ${item.favoriteCount ?? 0}`}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            router.push(`/tea/${item.id}`);
+          }}
+          style={styles.actionPill}
+        >
+          <Text style={styles.actionPillText}>💬 {item.commentCount}</Text>
+        </Pressable>
+
+        <Pressable style={styles.actionPill}>
+          <Text style={styles.actionPillText}>↻ Repost</Text>
+        </Pressable>
+      </View>
+    </Pressable>
+  );
+});
+
 export default function TeaHomeScreen() {
   const [search, setSearch] = useState('');
   const token = useAuthStore((s) => s.token);
@@ -48,6 +190,41 @@ export default function TeaHomeScreen() {
       await queryClient.invalidateQueries({ queryKey: ['tea-post'] });
     },
   });
+
+  const handleLike = useCallback(
+    (item: TeaPost) => {
+      if (!token) {
+        router.push('/login');
+        return;
+      }
+
+      favoriteMutation.mutate({
+        activityId: item.id,
+        favorite: !item.viewerHasLiked,
+      });
+    },
+    [token, favoriteMutation]
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: TeaPost }) => (
+      <TeaFeedCard
+        item={item}
+        token={token}
+        liking={
+          favoriteMutation.isPending &&
+          favoriteMutation.variables?.activityId === item.id
+        }
+        onLike={() => handleLike(item)}
+      />
+    ),
+    [
+      token,
+      handleLike,
+      favoriteMutation.isPending,
+      favoriteMutation.variables?.activityId,
+    ]
+  );
 
   const header = useMemo(
     () => (
@@ -128,27 +305,12 @@ export default function TeaHomeScreen() {
       <FlatList
         data={postsQuery.data ?? []}
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <TeaFeedCard
-            item={item}
-            token={token}
-            liking={
-              favoriteMutation.isPending &&
-              favoriteMutation.variables?.activityId === item.id
-            }
-            onLike={() => {
-              if (!token) {
-                router.push('/login');
-                return;
-              }
-
-              favoriteMutation.mutate({
-                activityId: item.id,
-                favorite: !item.viewerHasLiked,
-              });
-            }}
-          />
-        )}
+        renderItem={renderItem}
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        windowSize={7}
+        removeClippedSubviews
+        updateCellsBatchingPeriod={50}
         ListHeaderComponent={header}
         ListEmptyComponent={
           postsQuery.isLoading ? (
@@ -179,145 +341,6 @@ export default function TeaHomeScreen() {
       />
     </SafeAreaView>
   );
-}
-
-function TeaFeedCard({
-  item,
-  token,
-  onLike,
-  liking,
-}: {
-  item: TeaPost;
-  token: string | null;
-  onLike: () => void;
-  liking: boolean;
-}) {
-  const hasImage = !!item.imageUrls?.length;
-  const hasVideo = !!item.videoUrls?.length;
-  const hasText = !!item.content?.trim();
-
-  return (
-    <Pressable
-      style={styles.card}
-      onPress={() => router.push(`/tea/${item.id}`)}
-    >
-      <View style={styles.cardTopRow}>
-        <Pressable
-          onPress={(e) => {
-            e.stopPropagation();
-            if (item.authorId) {
-              router.push(`/tea/profile/${item.authorId}`);
-            }
-          }}
-          style={styles.authorRow}
-        >
-          {item.authorAvatarUrl ? (
-            <Image source={{ uri: item.authorAvatarUrl }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatar} />
-          )}
-
-          <View style={styles.authorTextWrap}>
-            <Text style={styles.authorName}>{item.author}</Text>
-            <Text style={styles.metaText}>{formatTime(item.time)}</Text>
-          </View>
-        </Pressable>
-
-        <Pressable style={styles.followMiniBtn}>
-          <Text style={styles.followMiniBtnText}>Follow</Text>
-        </Pressable>
-      </View>
-
-      {hasText ? (
-        <Text
-          style={[
-            styles.cardContent,
-            (hasImage || hasVideo) && styles.cardContentWithMedia,
-          ]}
-          numberOfLines={hasImage || hasVideo ? 3 : 6}
-        >
-          {item.content}
-        </Text>
-      ) : null}
-
-      {hasVideo ? (
-        <View style={styles.mediaWrap}>
-          <Image
-            source={{
-              uri:
-  item.edVideoPosterUrl ||
-  item.videoPosterUrls?.[0] ||
-  'https://everythingdid.com/wp-content/plugins/buddyboss-platform/bp-templates/bp-nouveau/images/video-placeholder.jpg',
-            }}
-            style={styles.cardImage}
-            resizeMode="cover"
-          />
-          <View style={styles.videoBadge}>
-            <Text style={styles.videoBadgeText}>▶ Video</Text>
-          </View>
-        </View>
-      ) : hasImage ? (
-        <View style={styles.mediaWrap}>
-          <Image
-            source={{ uri: item.imageUrls[0] }}
-            style={styles.cardImage}
-            resizeMode="cover"
-          />
-        </View>
-      ) : null}
-
-      <View style={styles.cardActions}>
-        <Pressable
-          onPress={(e) => {
-            e.stopPropagation();
-            if (!token) {
-              router.push('/login');
-              return;
-            }
-            onLike();
-          }}
-          style={[
-            styles.actionPill,
-            item.viewerHasLiked && styles.actionPillActive,
-          ]}
-        >
-          <Text
-            style={[
-              styles.actionPillText,
-              item.viewerHasLiked && styles.actionPillTextActive,
-            ]}
-          >
-            {liking ? 'Saving...' : `♥ ${item.favoriteCount ?? 0}`}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          onPress={(e) => {
-            e.stopPropagation();
-            router.push(`/tea/${item.id}`);
-          }}
-          style={styles.actionPill}
-        >
-          <Text style={styles.actionPillText}>💬 {item.commentCount}</Text>
-        </Pressable>
-
-        <Pressable style={styles.actionPill}>
-          <Text style={styles.actionPillText}>↻ Repost</Text>
-        </Pressable>
-      </View>
-    </Pressable>
-  );
-}
-
-function formatTime(value: string) {
-  if (!value) return 'Now';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-
-  return d.toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
-  });
 }
 
 const styles = StyleSheet.create({
@@ -433,29 +456,6 @@ const styles = StyleSheet.create({
   },
   tabPillTextActive: {
     color: '#fff',
-  },
-  quickCompose: {
-    marginTop: 14,
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#ececf1',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  quickAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 999,
-    backgroundColor: '#ececf1',
-  },
-  quickComposeText: {
-    color: '#8b8b8b',
-    fontSize: 15,
-    fontWeight: '500',
   },
   card: {
     backgroundColor: '#fff',

@@ -2,6 +2,7 @@ import { useAuthStore } from '../store/auth-store';
 
 const API_BASE = 'https://everythingdid.com/wp-json/buddyboss/v1';
 const WP_MEDIA_BASE = 'https://everythingdid.com/wp-json/wp/v2/media';
+const ED_API_BASE = 'https://everythingdid.com/wp-json/everythingdid/v1';
 
 export type TeaPost = {
   id: number;
@@ -18,7 +19,7 @@ export type TeaPost = {
   videoPosterUrls: string[];
   videoAttachmentIds: number[];
   edVideoPosterId?: number;
-edVideoPosterUrl?: string;
+  edVideoPosterUrl?: string;
 };
 
 export type TeaComment = {
@@ -96,6 +97,41 @@ async function apiDelete(path: string) {
     headers: {
       ...(await authedHeaders()),
     },
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || raw?.code || 'Request failed');
+  }
+
+  return raw;
+}
+
+async function edApiGet(path: string) {
+  const res = await fetch(`${ED_API_BASE}${path}`, {
+    headers: {
+      ...(await authedHeaders()),
+    },
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || raw?.code || 'Request failed');
+  }
+
+  return raw;
+}
+
+async function edApiPost(path: string, payload: Record<string, any>) {
+  const res = await fetch(`${ED_API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await authedHeaders()),
+    },
+    body: JSON.stringify(payload),
   });
 
   const raw = await res.json().catch(() => null);
@@ -256,18 +292,34 @@ function extractActivityText(item: any): string {
   return text === '.' ? '' : text;
 }
 
+export async function fetchTeaPoster(activityId: number | string): Promise<{
+  poster_id?: number;
+  poster_url?: string;
+}> {
+  const raw = await edApiGet(`/activity-meta/${activityId}`);
+  return {
+    poster_id: Number(raw?.poster_id ?? 0) || undefined,
+    poster_url: String(raw?.poster_url ?? '').trim() || undefined,
+  };
+}
+
 async function mapActivityItem(item: any): Promise<TeaPost> {
   const authorId = pickActivityAuthorId(item);
+  const videoAttachmentIds = pickActivityVideoAttachmentIds(item);
+  const directPosterUrl =
+    String(item?.ed_video_poster_url ?? '').trim() || undefined;
+  const directPosterId =
+    Number(item?.ed_video_poster_id ?? 0) || undefined;
 
   let fallbackPosterUrl: string | undefined;
   let fallbackPosterId: number | undefined;
 
-  try {
-    const poster = await fetchTeaPoster(Number(item?.id ?? 0));
-    fallbackPosterUrl = poster.poster_url;
-    fallbackPosterId = poster.poster_id;
-  } catch (e) {
-    console.log('fetchTeaPoster failed for activity', item?.id, e);
+  if (videoAttachmentIds.length > 0 && !directPosterUrl) {
+    try {
+      const poster = await fetchTeaPoster(Number(item?.id ?? 0));
+      fallbackPosterUrl = poster.poster_url;
+      fallbackPosterId = poster.poster_id;
+    } catch (_e) {}
   }
 
   return {
@@ -289,15 +341,11 @@ async function mapActivityItem(item: any): Promise<TeaPost> {
         : false,
     commentCount: Number(item?.comment_count ?? item?.comments_count ?? 0),
     imageUrls: pickActivityImageUrls(item),
-    videoUrls: await pickActivityVideoUrls(item),
+    videoUrls: [],
     videoPosterUrls: pickActivityVideoPosterUrls(item),
-    videoAttachmentIds: pickActivityVideoAttachmentIds(item),
-    edVideoPosterId:
-      Number(item?.ed_video_poster_id ?? 0) || fallbackPosterId || undefined,
-    edVideoPosterUrl:
-      String(item?.ed_video_poster_url ?? '').trim() ||
-      fallbackPosterUrl ||
-      undefined,
+    videoAttachmentIds,
+    edVideoPosterId: directPosterId || fallbackPosterId,
+    edVideoPosterUrl: directPosterUrl || fallbackPosterUrl,
   };
 }
 
@@ -333,16 +381,6 @@ export async function fetchTeaPosts(params?: {
     ? raw.activities
     : [];
 
-  console.log(
-  'TEA RAW POSTERS',
-  arr.map((item: any) => ({
-    id: item?.id,
-    ed_video_poster_id: item?.ed_video_poster_id,
-    ed_video_poster_url: item?.ed_video_poster_url,
-    type: item?.type,
-  }))
-);  
-
   const filtered = arr.filter((item: any) => {
     const id = Number(item?.id ?? 0);
     const type = String(item?.type ?? '').toLowerCase();
@@ -367,7 +405,12 @@ export async function fetchTeaPostDetail(
   activityId: number | string
 ): Promise<TeaPost> {
   const raw = await apiGet(`/activity/${activityId}`);
-  return mapActivityItem(raw);
+  const mapped = await mapActivityItem(raw);
+
+  return {
+    ...mapped,
+    videoUrls: await pickActivityVideoUrls(raw),
+  };
 }
 
 export async function fetchTeaComments(
@@ -489,53 +532,6 @@ export async function toggleTeaFavorite({
   return apiPost(`/activity/${activityId}/favorite`, {
     favorite,
   });
-}
-const ED_API_BASE = 'https://everythingdid.com/wp-json/everythingdid/v1';
-
-async function edApiGet(path: string) {
-  const res = await fetch(`${ED_API_BASE}${path}`, {
-    headers: {
-      ...(await authedHeaders()),
-    },
-  });
-
-  const raw = await res.json().catch(() => null);
-
-  if (!res.ok) {
-    throw new Error(raw?.message || raw?.code || 'Request failed');
-  }
-
-  return raw;
-}
-
-async function edApiPost(path: string, payload: Record<string, any>) {
-  const res = await fetch(`${ED_API_BASE}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(await authedHeaders()),
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const raw = await res.json().catch(() => null);
-
-  if (!res.ok) {
-    throw new Error(raw?.message || raw?.code || 'Request failed');
-  }
-
-  return raw;
-}
-
-export async function fetchTeaPoster(activityId: number | string): Promise<{
-  poster_id?: number;
-  poster_url?: string;
-}> {
-  const raw = await edApiGet(`/activity-meta/${activityId}`);
-  return {
-    poster_id: Number(raw?.poster_id ?? 0) || undefined,
-    poster_url: String(raw?.poster_url ?? '').trim() || undefined,
-  };
 }
 
 export async function saveTeaPoster({
