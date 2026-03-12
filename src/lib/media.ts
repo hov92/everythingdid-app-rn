@@ -99,6 +99,27 @@ export async function takePhoto(): Promise<PickedMedia | null> {
   return normalizePickedAsset(res.assets[0]);
 }
 
+export async function takeVideo(): Promise<PickedMedia | null> {
+  const perm = await ImagePicker.requestCameraPermissionsAsync();
+  if (!perm.granted) {
+    throw new Error('Camera permission denied.');
+  }
+
+  const res = await ImagePicker.launchCameraAsync({
+    mediaTypes: ['videos'],
+    allowsEditing: false,
+    quality: 1,
+    videoMaxDuration: 60,
+  });
+
+  if (res.canceled || !res.assets?.length) return null;
+
+  const asset = res.assets[0];
+  const thumbnailUri = await generateVideoThumbnail(asset.uri);
+
+  return normalizePickedAsset(asset, thumbnailUri || undefined);
+}
+
 export async function uploadWpMedia(file: PickedMedia): Promise<number | null> {
   const tokenModule = await import('../store/auth-store');
   const token = tokenModule.useAuthStore.getState().token;
