@@ -259,6 +259,17 @@ function extractActivityText(item: any): string {
 async function mapActivityItem(item: any): Promise<TeaPost> {
   const authorId = pickActivityAuthorId(item);
 
+  let fallbackPosterUrl: string | undefined;
+  let fallbackPosterId: number | undefined;
+
+  try {
+    const poster = await fetchTeaPoster(Number(item?.id ?? 0));
+    fallbackPosterUrl = poster.poster_url;
+    fallbackPosterId = poster.poster_id;
+  } catch (e) {
+    console.log('fetchTeaPoster failed for activity', item?.id, e);
+  }
+
   return {
     id: Number(item?.id ?? 0),
     content: extractActivityText(item),
@@ -281,8 +292,12 @@ async function mapActivityItem(item: any): Promise<TeaPost> {
     videoUrls: await pickActivityVideoUrls(item),
     videoPosterUrls: pickActivityVideoPosterUrls(item),
     videoAttachmentIds: pickActivityVideoAttachmentIds(item),
-    edVideoPosterId: Number(item?.ed_video_poster_id ?? 0) || undefined,
-edVideoPosterUrl: String(item?.ed_video_poster_url ?? '').trim() || undefined,
+    edVideoPosterId:
+      Number(item?.ed_video_poster_id ?? 0) || fallbackPosterId || undefined,
+    edVideoPosterUrl:
+      String(item?.ed_video_poster_url ?? '').trim() ||
+      fallbackPosterUrl ||
+      undefined,
   };
 }
 
@@ -317,6 +332,16 @@ export async function fetchTeaPosts(params?: {
     : Array.isArray(raw?.activities)
     ? raw.activities
     : [];
+
+  console.log(
+  'TEA RAW POSTERS',
+  arr.map((item: any) => ({
+    id: item?.id,
+    ed_video_poster_id: item?.ed_video_poster_id,
+    ed_video_poster_url: item?.ed_video_poster_url,
+    type: item?.type,
+  }))
+);  
 
   const filtered = arr.filter((item: any) => {
     const id = Number(item?.id ?? 0);
@@ -500,6 +525,17 @@ async function edApiPost(path: string, payload: Record<string, any>) {
   }
 
   return raw;
+}
+
+export async function fetchTeaPoster(activityId: number | string): Promise<{
+  poster_id?: number;
+  poster_url?: string;
+}> {
+  const raw = await edApiGet(`/activity-meta/${activityId}`);
+  return {
+    poster_id: Number(raw?.poster_id ?? 0) || undefined,
+    poster_url: String(raw?.poster_url ?? '').trim() || undefined,
+  };
 }
 
 export async function saveTeaPoster({
