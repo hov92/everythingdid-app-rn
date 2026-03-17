@@ -1,7 +1,7 @@
-import { useAuthStore } from '../store/auth-store';
+import { useAuthStore } from "../store/auth-store";
 
-const API_BASE = 'https://everythingdid.com/wp-json/buddyboss/v1';
-const ED_API_BASE = 'https://everythingdid.com/wp-json/everythingdid/v1';
+const API_BASE = "https://everythingdid.com/wp-json/buddyboss/v1";
+const ED_API_BASE = "https://everythingdid.com/wp-json/everythingdid/v1";
 
 export type ForumRow = {
   id: number;
@@ -60,17 +60,17 @@ export type TopicDetail = {
 };
 
 function htmlToText(html: string) {
-  return String(html || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&#0*38;|&amp;/g, '&')
-    .replace(/&nbsp;/g, ' ')
+  return String(html || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&#0*38;|&amp;/g, "&")
+    .replace(/&nbsp;/g, " ")
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
@@ -85,17 +85,13 @@ function pickAuthorName(obj: any): string {
       obj?.user_data?.name ??
       obj?.user_name ??
       obj?._embedded?.author?.[0]?.name ??
-      ''
+      "",
   ).trim();
 }
 
 function pickAuthorId(obj: any): number {
   return Number(
-    obj?.author_id ??
-      obj?.author ??
-      obj?.user_id ??
-      obj?.poster_id ??
-      0
+    obj?.author_id ?? obj?.author ?? obj?.user_id ?? obj?.poster_id ?? 0,
   );
 }
 
@@ -106,7 +102,7 @@ function fallbackAuthor(obj: any): string {
   const id = pickAuthorId(obj);
   if (id) return `User ${id}`;
 
-  return 'Unknown';
+  return "Unknown";
 }
 
 export async function authedHeaders(): Promise<Record<string, string>> {
@@ -127,7 +123,7 @@ async function apiGet(path: string) {
 
   if (!res.ok) {
     const raw = await res.json().catch(() => null);
-    throw new Error(raw?.message || 'Request failed');
+    throw new Error(raw?.message || "Request failed");
   }
 
   return res.json();
@@ -135,9 +131,9 @@ async function apiGet(path: string) {
 
 async function apiPost(path: string, payload: Record<string, any>) {
   const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...(await authedHeaders()),
     },
     body: JSON.stringify(payload),
@@ -146,7 +142,7 @@ async function apiPost(path: string, payload: Record<string, any>) {
   const raw = await res.json().catch(() => null);
 
   if (!res.ok) {
-    throw new Error(raw?.message || 'Request failed');
+    throw new Error(raw?.message || "Request failed");
   }
 
   return raw;
@@ -154,9 +150,9 @@ async function apiPost(path: string, payload: Record<string, any>) {
 
 async function edApiPost(path: string, payload: Record<string, any>) {
   const res = await fetch(`${ED_API_BASE}${path}`, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...(await authedHeaders()),
     },
     body: JSON.stringify(payload),
@@ -165,7 +161,7 @@ async function edApiPost(path: string, payload: Record<string, any>) {
   const raw = await res.json().catch(() => null);
 
   if (!res.ok) {
-    throw new Error(raw?.message || raw?.code || 'Request failed');
+    throw new Error(raw?.message || raw?.code || "Request failed");
   }
 
   return raw;
@@ -184,7 +180,7 @@ async function fetchMemberMap(ids: number[]): Promise<Map<number, string>> {
             member?.display_name ??
             member?.user?.name ??
             member?.user?.display_name ??
-            ''
+            "",
         ).trim();
 
         if (name) {
@@ -193,7 +189,7 @@ async function fetchMemberMap(ids: number[]): Promise<Map<number, string>> {
       } catch {
         // ignore
       }
-    })
+    }),
   );
 
   return map;
@@ -203,7 +199,7 @@ async function fetchAccurateReplyCount(topicId: number): Promise<number> {
   if (!topicId) return 0;
 
   const repliesRaw = await apiGet(
-    `/reply?topic_id=${topicId}&per_page=100&order=asc`
+    `/reply?topic_id=${topicId}&per_page=100&order=asc`,
   ).catch(() => []);
 
   const repliesArr = Array.isArray(repliesRaw) ? repliesRaw : [];
@@ -215,35 +211,33 @@ async function fetchAccurateReplyCount(topicId: number): Promise<number> {
 }
 
 export async function fetchForums(): Promise<ForumRow[]> {
-  const raw = await apiGet('/forums?per_page=50');
+  const raw = await apiGet("/forums?per_page=50");
   const arr = Array.isArray(raw) ? raw : [];
 
   return arr.map((f: any) => ({
     id: Number(f?.id ?? 0),
     title:
-      htmlToText(f?.title?.rendered ?? '') ||
-      String(f?.title ?? '') ||
-      'Forum',
+      htmlToText(f?.title?.rendered ?? "") || String(f?.title ?? "") || "Forum",
   }));
 }
 
 export async function fetchTopics(params?: {
   forumId?: number | null;
   search?: string;
-  sort?: 'latest' | 'trending';
+  sort?: "latest" | "trending";
 }): Promise<TopicRow[]> {
   const qs = new URLSearchParams();
-  qs.set('per_page', '30');
+  qs.set("per_page", "30");
 
-  if (params?.forumId) qs.set('parent', String(params.forumId));
-  if (params?.search) qs.set('search', params.search);
+  if (params?.forumId) qs.set("parent", String(params.forumId));
+  if (params?.search) qs.set("search", params.search);
 
-  if (params?.sort === 'trending') {
-    qs.set('orderby', 'popular');
-    qs.set('order', 'desc');
+  if (params?.sort === "trending") {
+    qs.set("orderby", "popular");
+    qs.set("order", "desc");
   } else {
-    qs.set('orderby', 'date');
-    qs.set('order', 'desc');
+    qs.set("orderby", "date");
+    qs.set("order", "desc");
   }
 
   const raw = await apiGet(`/topics?${qs.toString()}`);
@@ -252,27 +246,24 @@ export async function fetchTopics(params?: {
   const authorIds = arr.map((t: any) => pickAuthorId(t)).filter(Boolean);
   const memberMap = await fetchMemberMap(authorIds);
   const counts = await Promise.all(
-    arr.map((t: any) => fetchAccurateReplyCount(Number(t?.id ?? 0)))
+    arr.map((t: any) => fetchAccurateReplyCount(Number(t?.id ?? 0))),
   );
-console.log('TOPIC SAMPLE', arr[0]);
+  console.log("TOPIC SAMPLE", arr[0]);
   return arr.map((t: any, index: number) => {
     const authorId = pickAuthorId(t);
 
     return {
       id: Number(t?.id ?? 0),
       title:
-        htmlToText(t?.title?.rendered ?? '') ||
-        String(t?.title ?? '') ||
-        'Untitled Thread',
+        htmlToText(t?.title?.rendered ?? "") ||
+        String(t?.title ?? "") ||
+        "Untitled Thread",
       excerpt:
-        htmlToText(t?.excerpt?.rendered ?? '') ||
-        htmlToText(t?.content?.rendered ?? '') ||
-        '',
-      author:
-        pickAuthorName(t) ||
-        memberMap.get(authorId) ||
-        fallbackAuthor(t),
-      time: String(t?.date ?? t?.modified ?? ''),
+        htmlToText(t?.excerpt?.rendered ?? "") ||
+        htmlToText(t?.content?.rendered ?? "") ||
+        "",
+      author: pickAuthorName(t) || memberMap.get(authorId) || fallbackAuthor(t),
+      time: String(t?.date ?? t?.modified ?? ""),
       replyCount: counts[index] ?? 0,
       forumId: Number(t?.parent ?? 0),
       voteCount: Number(t?.ed_vote_count ?? 0),
@@ -282,10 +273,12 @@ console.log('TOPIC SAMPLE', arr[0]);
   });
 }
 
-export async function fetchTopicDetail(topicId: number | string): Promise<TopicDetail> {
+export async function fetchTopicDetail(
+  topicId: number | string,
+): Promise<TopicDetail> {
   const topic = await apiGet(`/topics/${topicId}`);
   const repliesRaw = await apiGet(
-    `/reply?topic_id=${topicId}&per_page=100&order=asc`
+    `/reply?topic_id=${topicId}&per_page=100&order=asc`,
   ).catch(() => []);
 
   const repliesArr = Array.isArray(repliesRaw) ? repliesRaw : [];
@@ -306,41 +299,39 @@ export async function fetchTopicDetail(topicId: number | string): Promise<TopicD
   return {
     id: Number(topic?.id ?? 0),
     title:
-      htmlToText(topic?.title?.rendered ?? '') ||
-      String(topic?.title ?? '') ||
-      'Untitled Thread',
+      htmlToText(topic?.title?.rendered ?? "") ||
+      String(topic?.title ?? "") ||
+      "Untitled Thread",
     content:
-      htmlToText(topic?.content?.rendered ?? '') ||
-      htmlToText(topic?.content?.raw ?? '') ||
-      '',
+      htmlToText(topic?.content?.rendered ?? "") ||
+      htmlToText(topic?.content?.raw ?? "") ||
+      "",
     author:
       pickAuthorName(topic) ||
       memberMap.get(topicAuthorId) ||
       fallbackAuthor(topic),
     authorId: topicAuthorId || undefined,
-    time: String(topic?.date ?? topic?.modified ?? ''),
+    time: String(topic?.date ?? topic?.modified ?? ""),
     replyCount: filteredReplies.length,
     voteCount: Number(topic?.ed_vote_count ?? 0),
     viewerHasVoted: Boolean(topic?.ed_viewer_has_voted),
     bestReplyId: Number(topic?.ed_best_reply_id ?? 0) || undefined,
     subscribed:
-  typeof topic?.action_states?.subscribed === 'boolean'
-    ? topic.action_states.subscribed
-    : false,
+      typeof topic?.action_states?.subscribed === "boolean"
+        ? topic.action_states.subscribed
+        : false,
     replies: filteredReplies.map((r: any) => {
       const authorId = pickAuthorId(r);
 
       return {
         id: Number(r?.id ?? 0),
         text:
-          htmlToText(r?.content?.rendered ?? '') ||
-          htmlToText(r?.content?.raw ?? '') ||
-          '',
+          htmlToText(r?.content?.rendered ?? "") ||
+          htmlToText(r?.content?.raw ?? "") ||
+          "",
         author:
-          pickAuthorName(r) ||
-          memberMap.get(authorId) ||
-          fallbackAuthor(r),
-        time: String(r?.date ?? r?.modified ?? ''),
+          pickAuthorName(r) || memberMap.get(authorId) || fallbackAuthor(r),
+        time: String(r?.date ?? r?.modified ?? ""),
         authorId,
         voteCount: Number(r?.ed_vote_count ?? 0),
         viewerHasVoted: Boolean(r?.ed_viewer_has_voted),
@@ -359,21 +350,21 @@ export async function createThread({
   title: string;
   content: string;
 }) {
-  return apiPost('/topics', {
+  return apiPost("/topics", {
     parent: Number(parent),
     title,
     content,
-    status: 'publish',
+    status: "publish",
   });
 }
 
 export async function fetchSubscribedThreads(): Promise<SimpleTopicRow[]> {
-  const raw = await apiGet('/subscriptions?type=topic&per_page=50').catch(() => []);
+  const raw = await apiGet("/subscriptions?type=topic&per_page=50").catch(
+    () => [],
+  );
   const arr = Array.isArray(raw) ? raw : [];
 
-  const itemIds = arr
-    .map((s: any) => Number(s?.item_id ?? 0))
-    .filter(Boolean);
+  const itemIds = arr.map((s: any) => Number(s?.item_id ?? 0)).filter(Boolean);
 
   if (!itemIds.length) return [];
 
@@ -384,14 +375,16 @@ export async function fetchSubscribedThreads(): Promise<SimpleTopicRow[]> {
       } catch {
         return null;
       }
-    })
+    }),
   );
 
   const cleanTopics = topics.filter(Boolean);
-  const authorIds = cleanTopics.map((t: any) => pickAuthorId(t)).filter(Boolean);
+  const authorIds = cleanTopics
+    .map((t: any) => pickAuthorId(t))
+    .filter(Boolean);
   const memberMap = await fetchMemberMap(authorIds);
   const counts = await Promise.all(
-    cleanTopics.map((t: any) => fetchAccurateReplyCount(Number(t?.id ?? 0)))
+    cleanTopics.map((t: any) => fetchAccurateReplyCount(Number(t?.id ?? 0))),
   );
 
   return cleanTopics.map((t: any, index: number) => {
@@ -400,18 +393,15 @@ export async function fetchSubscribedThreads(): Promise<SimpleTopicRow[]> {
     return {
       id: Number(t?.id ?? 0),
       title:
-        htmlToText(t?.title?.rendered ?? '') ||
-        String(t?.title ?? '') ||
-        'Untitled Thread',
+        htmlToText(t?.title?.rendered ?? "") ||
+        String(t?.title ?? "") ||
+        "Untitled Thread",
       excerpt:
-        htmlToText(t?.excerpt?.rendered ?? '') ||
-        htmlToText(t?.content?.rendered ?? '') ||
-        '',
-      author:
-        pickAuthorName(t) ||
-        memberMap.get(authorId) ||
-        fallbackAuthor(t),
-      time: String(t?.date ?? t?.modified ?? ''),
+        htmlToText(t?.excerpt?.rendered ?? "") ||
+        htmlToText(t?.content?.rendered ?? "") ||
+        "",
+      author: pickAuthorName(t) || memberMap.get(authorId) || fallbackAuthor(t),
+      time: String(t?.date ?? t?.modified ?? ""),
       replyCount: counts[index] ?? 0,
       voteCount: Number(t?.ed_vote_count ?? 0),
       viewerHasVoted: Boolean(t?.ed_viewer_has_voted),
@@ -420,7 +410,9 @@ export async function fetchSubscribedThreads(): Promise<SimpleTopicRow[]> {
   });
 }
 
-export async function fetchTopicsByIds(ids: number[]): Promise<SimpleTopicRow[]> {
+export async function fetchTopicsByIds(
+  ids: number[],
+): Promise<SimpleTopicRow[]> {
   const uniqueIds = [...new Set(ids.map(Number).filter(Boolean))];
   if (!uniqueIds.length) return [];
 
@@ -431,14 +423,16 @@ export async function fetchTopicsByIds(ids: number[]): Promise<SimpleTopicRow[]>
       } catch {
         return null;
       }
-    })
+    }),
   );
 
   const cleanTopics = topics.filter(Boolean);
-  const authorIds = cleanTopics.map((t: any) => pickAuthorId(t)).filter(Boolean);
+  const authorIds = cleanTopics
+    .map((t: any) => pickAuthorId(t))
+    .filter(Boolean);
   const memberMap = await fetchMemberMap(authorIds);
   const counts = await Promise.all(
-    cleanTopics.map((t: any) => fetchAccurateReplyCount(Number(t?.id ?? 0)))
+    cleanTopics.map((t: any) => fetchAccurateReplyCount(Number(t?.id ?? 0))),
   );
 
   return cleanTopics.map((t: any, index: number) => {
@@ -447,18 +441,15 @@ export async function fetchTopicsByIds(ids: number[]): Promise<SimpleTopicRow[]>
     return {
       id: Number(t?.id ?? 0),
       title:
-        htmlToText(t?.title?.rendered ?? '') ||
-        String(t?.title ?? '') ||
-        'Untitled Thread',
+        htmlToText(t?.title?.rendered ?? "") ||
+        String(t?.title ?? "") ||
+        "Untitled Thread",
       excerpt:
-        htmlToText(t?.excerpt?.rendered ?? '') ||
-        htmlToText(t?.content?.rendered ?? '') ||
-        '',
-      author:
-        pickAuthorName(t) ||
-        memberMap.get(authorId) ||
-        fallbackAuthor(t),
-      time: String(t?.date ?? t?.modified ?? ''),
+        htmlToText(t?.excerpt?.rendered ?? "") ||
+        htmlToText(t?.content?.rendered ?? "") ||
+        "",
+      author: pickAuthorName(t) || memberMap.get(authorId) || fallbackAuthor(t),
+      time: String(t?.date ?? t?.modified ?? ""),
       replyCount: counts[index] ?? 0,
       voteCount: Number(t?.ed_vote_count ?? 0),
       viewerHasVoted: Boolean(t?.ed_viewer_has_voted),
@@ -485,12 +476,12 @@ export async function postReply({
     payload.bbp_media = mediaIds;
   }
 
-  return apiPost('/reply', payload);
+  return apiPost("/reply", payload);
 }
 
 export async function deleteReply(replyId: number | string) {
   const res = await fetch(`${API_BASE}/reply/${replyId}`, {
-    method: 'DELETE',
+    method: "DELETE",
     headers: {
       ...(await authedHeaders()),
     },
@@ -499,7 +490,7 @@ export async function deleteReply(replyId: number | string) {
   const raw = await res.json().catch(() => null);
 
   if (!res.ok) {
-    throw new Error(raw?.message || 'Could not delete reply.');
+    throw new Error(raw?.message || "Could not delete reply.");
   }
 
   return raw;
@@ -525,7 +516,7 @@ export async function votePost({
   direction,
 }: {
   postId: number | string;
-  direction: 'up' | 'remove';
+  direction: "up" | "remove";
 }) {
   return edApiPost(`/vote/${postId}`, {
     direction,
@@ -551,5 +542,91 @@ export async function toggleTopicSubscription({
   topicId: number | string;
   subscribe: boolean;
 }) {
-  return apiPost(`/topics/${topicId}/${subscribe ? 'subscribe' : 'unsubscribe'}`, {});
+  return apiPost(
+    `/topics/${topicId}/${subscribe ? "subscribe" : "unsubscribe"}`,
+    {},
+  );
+}
+
+/**
+ * Shop / WooCommerce
+ */
+
+export type ShopCategory = {
+  id: number;
+  name: string;
+  slug: string;
+  count?: number;
+  image?: string;
+};
+
+export type ShopProduct = {
+  id: number;
+  name: string;
+  slug: string;
+  price: string;
+  regularPrice?: string;
+  salePrice?: string;
+  image: string;
+  gallery: string[];
+  shortDescription?: string;
+  description?: string;
+  categories: Array<{
+    id: number;
+    name: string;
+    slug: string;
+  }>;
+  badge?: string;
+  stockStatus?: string;
+};
+
+export async function fetchShopCategories(): Promise<ShopCategory[]> {
+  const res = await fetch(`${ED_API_BASE}/shop/categories`);
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || "Could not load categories");
+  }
+
+  return Array.isArray(raw) ? raw : [];
+}
+
+export async function fetchShopProducts(params?: {
+  search?: string;
+  category?: string;
+  featured?: boolean;
+  perPage?: number;
+}): Promise<ShopProduct[]> {
+  const qs = new URLSearchParams();
+
+  if (params?.search?.trim()) qs.set("search", params.search.trim());
+  if (params?.category) qs.set("category", params.category);
+  if (params?.featured) qs.set("featured", "true");
+  if (params?.perPage) qs.set("per_page", String(params.perPage));
+
+  const url = qs.toString()
+    ? `${ED_API_BASE}/shop/products?${qs.toString()}`
+    : `${ED_API_BASE}/shop/products`;
+
+  const res = await fetch(url);
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || "Could not load products");
+  }
+
+  return Array.isArray(raw) ? raw : [];
+}
+
+export async function fetchShopProductDetail(
+  productId: number | string,
+): Promise<ShopProduct> {
+  const res = await fetch(`${ED_API_BASE}/shop/products/${Number(productId)}`);
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || "Could not load product");
+  }
+
+  return raw;
 }
