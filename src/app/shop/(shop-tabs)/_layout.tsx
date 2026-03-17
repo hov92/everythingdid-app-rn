@@ -1,6 +1,15 @@
+import React, { useEffect } from 'react';
 import { Tabs } from 'expo-router';
+import { useShopCartStore } from '../../../store/shop-cart-store';
 
 export default function ShopTabsLayout() {
+  const cartCount = useShopCartStore((s) => s.count);
+  const hydrateFromServer = useShopCartStore((s) => s.hydrateFromServer);
+
+  useEffect(() => {
+    hydrateFromServer().catch(() => {});
+  }, [hydrateFromServer]);
+
   return (
     <Tabs
       screenOptions={{
@@ -35,7 +44,7 @@ export default function ShopTabsLayout() {
       <Tabs.Screen
         name="cart"
         options={{
-          title: 'Cart',
+          title: cartCount > 0 ? `Cart (${cartCount})` : 'Cart',
         }}
       />
     </Tabs>

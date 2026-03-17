@@ -793,3 +793,112 @@ export async function clearServerCart(
 
   return raw;
 }
+export type CheckoutAddressPayload = {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  address_1: string;
+  address_2?: string;
+  city: string;
+  state: string;
+  postcode: string;
+  country: string;
+};
+
+export type CheckoutSummaryItem = {
+  cart_item_key: string;
+  product_id: number;
+  name: string;
+  price: string;
+  quantity: number;
+  image: string;
+  line_subtotal?: string;
+  line_total?: string;
+};
+
+export type CheckoutSummaryTotals = {
+  subtotal?: string;
+  discount_total?: string;
+  shipping_total?: string;
+  fee_total?: string;
+  tax_total?: string;
+  total?: string;
+  currency?: string;
+};
+
+export type CheckoutNotice = {
+  type: string;
+  message: string;
+};
+
+export type CheckoutPrepareResponse = {
+  address: CheckoutAddressPayload;
+  summary: {
+    items: CheckoutSummaryItem[];
+    totals: CheckoutSummaryTotals;
+    count: number;
+    notices: CheckoutNotice[];
+  };
+};
+
+export type CreateOrderResponse = {
+  success: boolean;
+  order_id: number;
+  order_number: string;
+  status: string;
+  total: string;
+  message: string;
+};
+
+export async function prepareCheckout({
+  address,
+  cartToken,
+}: {
+  address: CheckoutAddressPayload;
+  cartToken?: string;
+}): Promise<CheckoutPrepareResponse> {
+  const res = await fetch(`${ED_API_BASE}/checkout/prepare`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await authedHeaders()),
+      ...(cartToken ? { 'X-ED-Cart-Token': cartToken } : {}),
+    },
+    body: JSON.stringify(address),
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || 'Could not prepare checkout');
+  }
+
+  return raw;
+}
+
+export async function createOrder({
+  address,
+  cartToken,
+}: {
+  address: CheckoutAddressPayload;
+  cartToken?: string;
+}): Promise<CreateOrderResponse> {
+  const res = await fetch(`${ED_API_BASE}/checkout/create-order`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await authedHeaders()),
+      ...(cartToken ? { 'X-ED-Cart-Token': cartToken } : {}),
+    },
+    body: JSON.stringify(address),
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || 'Could not create order');
+  }
+
+  return raw;
+}
