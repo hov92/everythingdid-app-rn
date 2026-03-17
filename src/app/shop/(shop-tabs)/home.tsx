@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useShopCartStore } from '../../../store/shop-cart-store';
 import {
   ActivityIndicator,
   FlatList,
@@ -16,7 +17,6 @@ import {
 import {
   fetchShopCategories,
   fetchShopProducts,
-  ShopCategory,
   ShopProduct,
 } from '../../../lib/api';
 
@@ -85,6 +85,14 @@ function ProductCard({ item }: { item: ShopProduct }) {
 export default function ShopHomeScreen() {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const cartCount = useShopCartStore((s) => s.count);
+const hydrateFromServer = useShopCartStore((s) => s.hydrateFromServer);
+
+useEffect(() => {
+  hydrateFromServer().catch(() => {});
+}, [hydrateFromServer]);
+
+
 
   const categoriesQuery = useQuery({
     queryKey: ['shop-categories'],
@@ -136,7 +144,9 @@ export default function ShopHomeScreen() {
                   style={styles.cartBtn}
                   onPress={() => router.push('/shop/(shop-tabs)/cart')}
                 >
-                  <Text style={styles.cartBtnText}>Cart</Text>
+                  <Text style={styles.cartBtnText}>
+  Cart{cartCount > 0 ? ` (${cartCount})` : ''}
+</Text>
                 </Pressable>
               </View>
 

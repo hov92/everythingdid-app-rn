@@ -630,3 +630,166 @@ export async function fetchShopProductDetail(
 
   return raw;
 }
+export type ServerCartItem = {
+  cart_item_key: string;
+  product_id: number;
+  variation_id?: number;
+  name: string;
+  price: string;
+  quantity: number;
+  image: string;
+  stock_status?: string;
+  line_subtotal?: string;
+  line_total?: string;
+};
+
+export type ServerCart = {
+  items: ServerCartItem[];
+  totals: {
+    subtotal?: string;
+    total?: string;
+    currency?: string;
+  };
+  count: number;
+};
+
+function withCartTokenHeaders(
+  cartToken?: string,
+  extra?: Record<string, string>,
+): Record<string, string> {
+  return {
+    ...(extra ?? {}),
+    ...(cartToken ? { "X-ED-Cart-Token": cartToken } : {}),
+  };
+}
+
+export async function fetchServerCart(
+  cartToken?: string,
+): Promise<ServerCart> {
+  const res = await fetch(`${ED_API_BASE}/cart`, {
+    headers: {
+      ...(await authedHeaders()),
+      ...withCartTokenHeaders(cartToken),
+    },
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || "Could not load cart");
+  }
+
+  return raw;
+}
+
+export async function addToServerCart({
+  productId,
+  quantity = 1,
+  cartToken,
+}: {
+  productId: number;
+  quantity?: number;
+  cartToken?: string;
+}): Promise<ServerCart> {
+  const res = await fetch(`${ED_API_BASE}/cart/add`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authedHeaders()),
+      ...withCartTokenHeaders(cartToken),
+    },
+    body: JSON.stringify({
+      product_id: productId,
+      quantity,
+    }),
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || "Could not add to cart");
+  }
+
+  return raw;
+}
+
+export async function updateServerCartItem({
+  cartItemKey,
+  quantity,
+  cartToken,
+}: {
+  cartItemKey: string;
+  quantity: number;
+  cartToken?: string;
+}): Promise<ServerCart> {
+  const res = await fetch(`${ED_API_BASE}/cart/update`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authedHeaders()),
+      ...withCartTokenHeaders(cartToken),
+    },
+    body: JSON.stringify({
+      cart_item_key: cartItemKey,
+      quantity,
+    }),
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || "Could not update cart");
+  }
+
+  return raw;
+}
+
+export async function removeFromServerCart({
+  cartItemKey,
+  cartToken,
+}: {
+  cartItemKey: string;
+  cartToken?: string;
+}): Promise<ServerCart> {
+  const res = await fetch(`${ED_API_BASE}/cart/remove`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authedHeaders()),
+      ...withCartTokenHeaders(cartToken),
+    },
+    body: JSON.stringify({
+      cart_item_key: cartItemKey,
+    }),
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || "Could not remove from cart");
+  }
+
+  return raw;
+}
+
+export async function clearServerCart(
+  cartToken?: string,
+): Promise<ServerCart> {
+  const res = await fetch(`${ED_API_BASE}/cart/clear`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authedHeaders()),
+      ...withCartTokenHeaders(cartToken),
+    },
+    body: JSON.stringify({}),
+  });
+
+  const raw = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(raw?.message || "Could not clear cart");
+  }
+
+  return raw;
+}

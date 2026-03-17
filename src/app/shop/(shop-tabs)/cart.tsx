@@ -1,5 +1,5 @@
-import React from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useEffect } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Alert,
   FlatList,
@@ -8,24 +8,65 @@ import {
   StyleSheet,
   Text,
   View,
-} from 'react-native';
-import { useShopCartStore } from '../../../store/shop-cart-store';
+} from "react-native";
+import { useShopCartStore } from "../../../store/shop-cart-store";
 
 function parsePriceToNumber(price: string) {
-  const cleaned = String(price || '').replace(/[^0-9.]/g, '');
+  const cleaned = String(price || "").replace(/[^0-9.]/g, "");
   const value = Number(cleaned);
   return Number.isFinite(value) ? value : 0;
 }
 
 export default function ShopCartScreen() {
   const items = useShopCartStore((s) => s.items);
+  const subtotalText = useShopCartStore((s) => s.subtotal);
+  const totalText = useShopCartStore((s) => s.total);
   const removeItem = useShopCartStore((s) => s.removeItem);
   const setQuantity = useShopCartStore((s) => s.setQuantity);
   const clearCart = useShopCartStore((s) => s.clearCart);
+  const hydrateFromServer = useShopCartStore((s) => s.hydrateFromServer);
+  const syncing = useShopCartStore((s) => s.syncing);
+  const lastError = useShopCartStore((s) => s.lastError);
 
-  const subtotal = items.reduce((sum, item) => {
+  useEffect(() => {
+    hydrateFromServer().catch(() => {});
+  }, [hydrateFromServer]);
+
+  const subtotalFallback = items.reduce((sum, item) => {
     return sum + parsePriceToNumber(item.price) * item.quantity;
   }, 0);
+
+  async function handleDecrease(productId: number, quantity: number) {
+    try {
+      await setQuantity(productId, quantity - 1);
+    } catch (e: any) {
+      Alert.alert("Cart error", e?.message || "Could not update quantity.");
+    }
+  }
+
+  async function handleIncrease(productId: number, quantity: number) {
+    try {
+      await setQuantity(productId, quantity + 1);
+    } catch (e: any) {
+      Alert.alert("Cart error", e?.message || "Could not update quantity.");
+    }
+  }
+
+  async function handleRemove(productId: number) {
+    try {
+      await removeItem(productId);
+    } catch (e: any) {
+      Alert.alert("Cart error", e?.message || "Could not remove item.");
+    }
+  }
+
+  async function handleClearCart() {
+    try {
+      await clearCart();
+    } catch (e: any) {
+      Alert.alert("Cart error", e?.message || "Could not clear cart.");
+    }
+  }
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -37,8 +78,11 @@ export default function ShopCartScreen() {
           <View style={styles.headerWrap}>
             <Text style={styles.title}>Cart</Text>
             <Text style={styles.subtitle}>
-              {items.length} item{items.length === 1 ? '' : 's'}
+              {items.length} item{items.length === 1 ? "" : "s"}
             </Text>
+
+            {syncing ? <Text style={styles.syncText}>Syncing cart…</Text> : null}
+            {lastError ? <Text style={styles.errorText}>{lastError}</Text> : null}
           </View>
         }
         renderItem={({ item }) => (
@@ -51,10 +95,15 @@ export default function ShopCartScreen() {
               </Text>
               <Text style={styles.price}>{item.price}</Text>
 
+              {!!item.lineSubtotal ? (
+                <Text style={styles.lineSubtotal}>{item.lineSubtotal}</Text>
+              ) : null}
+
               <View style={styles.qtyRow}>
                 <Pressable
                   style={styles.qtyBtn}
-                  onPress={() => setQuantity(item.productId, item.quantity - 1)}
+                  onPress={() => handleDecrease(item.productId, item.quantity)}
+                  disabled={syncing}
                 >
                   <Text style={styles.qtyBtnText}>−</Text>
                 </Pressable>
@@ -63,7 +112,8 @@ export default function ShopCartScreen() {
 
                 <Pressable
                   style={styles.qtyBtn}
-                  onPress={() => setQuantity(item.productId, item.quantity + 1)}
+                  onPress={() => handleIncrease(item.productId, item.quantity)}
+                  disabled={syncing}
                 >
                   <Text style={styles.qtyBtnText}>+</Text>
                 </Pressable>
@@ -71,8 +121,9 @@ export default function ShopCartScreen() {
             </View>
 
             <Pressable
-              onPress={() => removeItem(item.productId)}
+              onPress={() => handleRemove(item.productId)}
               style={styles.removeBtn}
+              disabled={syncing}
             >
               <Text style={styles.removeBtnText}>Remove</Text>
             </Pressable>
@@ -91,22 +142,38 @@ export default function ShopCartScreen() {
             <View style={styles.summaryCard}>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Subtotal</Text>
-                <Text style={styles.summaryValue}>${subtotal.toFixed(2)}</Text>
+                <Text style={styles.summaryValue}>
+                  {subtotalText || `$${subtotalFallback.toFixed(2)}`}
+                </Text>
               </View>
 
+              {!!totalText ? (
+                <View style={[styles.summaryRow, styles.summaryRowSpacing]}>
+                  <Text style={styles.summaryLabel}>Total</Text>
+                  <Text style={styles.summaryValue}>{totalText}</Text>
+                </View>
+              ) : null}
+
               <Pressable
-                style={styles.checkoutBtn}
+                style={[styles.checkoutBtn, syncing && styles.disabledBtn]}
+                disabled={syncing}
                 onPress={() =>
                   Alert.alert(
-                    'Checkout next',
-                    'Cart state is real. Checkout sync to Woo is the next step.'
+                    "Checkout next",
+                    "Cart sync is real. Native checkout is the next step."
                   )
                 }
               >
-                <Text style={styles.checkoutBtnText}>Checkout</Text>
+                <Text style={styles.checkoutBtnText}>
+                  {syncing ? "Syncing..." : "Checkout"}
+                </Text>
               </Pressable>
 
-              <Pressable style={styles.clearBtn} onPress={clearCart}>
+              <Pressable
+                style={[styles.clearBtn, syncing && styles.disabledBtn]}
+                onPress={handleClearCart}
+                disabled={syncing}
+              >
                 <Text style={styles.clearBtnText}>Clear Cart</Text>
               </Pressable>
             </View>
@@ -118,86 +185,120 @@ export default function ShopCartScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f6f6f7' },
+  screen: { flex: 1, backgroundColor: "#f6f6f7" },
   listContent: { padding: 16, paddingBottom: 28 },
   headerWrap: { marginBottom: 14 },
-  title: { fontSize: 36, fontWeight: '900', color: '#111' },
-  subtitle: { marginTop: 6, fontSize: 14, color: '#666', fontWeight: '600' },
+  title: { fontSize: 36, fontWeight: "900", color: "#111" },
+  subtitle: { marginTop: 6, fontSize: 14, color: "#666", fontWeight: "600" },
+  syncText: {
+    marginTop: 6,
+    fontSize: 13,
+    color: "#666",
+    fontWeight: "600",
+  },
+  errorText: {
+    marginTop: 6,
+    fontSize: 13,
+    color: "#b42318",
+    fontWeight: "600",
+  },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#ececf1',
+    borderColor: "#ececf1",
     padding: 12,
     marginBottom: 12,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
-    alignItems: 'center',
+    alignItems: "center",
   },
   image: {
     width: 84,
     height: 84,
     borderRadius: 14,
-    backgroundColor: '#e9e9ec',
+    backgroundColor: "#e9e9ec",
   },
   meta: { flex: 1 },
-  name: { fontSize: 15, fontWeight: '800', color: '#111' },
-  price: { marginTop: 6, fontSize: 14, fontWeight: '700', color: '#222' },
-  qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  name: { fontSize: 15, fontWeight: "800", color: "#111" },
+  price: { marginTop: 6, fontSize: 14, fontWeight: "700", color: "#222" },
+  lineSubtotal: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+  },
+  qtyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 10,
+  },
   qtyBtn: {
     width: 32,
     height: 32,
     borderRadius: 999,
-    backgroundColor: '#ececf1',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#ececf1",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  qtyBtnText: { fontSize: 18, fontWeight: '800', color: '#111' },
-  qtyText: { minWidth: 20, textAlign: 'center', fontSize: 14, fontWeight: '800' },
+  qtyBtnText: { fontSize: 18, fontWeight: "800", color: "#111" },
+  qtyText: {
+    minWidth: 20,
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "800",
+  },
   removeBtn: {
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#fbe9e9',
+    backgroundColor: "#fbe9e9",
   },
-  removeBtnText: { color: '#b42318', fontSize: 12, fontWeight: '700' },
-  empty: { paddingTop: 60, alignItems: 'center' },
-  emptyTitle: { fontSize: 20, fontWeight: '800', color: '#111' },
+  removeBtnText: { color: "#b42318", fontSize: 12, fontWeight: "700" },
+  empty: { paddingTop: 60, alignItems: "center" },
+  emptyTitle: { fontSize: 20, fontWeight: "800", color: "#111" },
   emptyText: {
     marginTop: 8,
     fontSize: 14,
-    color: '#777',
-    textAlign: 'center',
+    color: "#777",
+    textAlign: "center",
   },
   summaryCard: {
     marginTop: 8,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#ececf1',
+    borderColor: "#ececf1",
     padding: 16,
   },
   summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  summaryLabel: { fontSize: 15, fontWeight: '700', color: '#555' },
-  summaryValue: { fontSize: 22, fontWeight: '900', color: '#111' },
+  summaryRowSpacing: {
+    marginTop: 10,
+  },
+  summaryLabel: { fontSize: 15, fontWeight: "700", color: "#555" },
+  summaryValue: { fontSize: 22, fontWeight: "900", color: "#111" },
   checkoutBtn: {
     marginTop: 16,
-    backgroundColor: '#111',
+    backgroundColor: "#111",
     borderRadius: 16,
     paddingVertical: 14,
-    alignItems: 'center',
+    alignItems: "center",
   },
-  checkoutBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  checkoutBtnText: { color: "#fff", fontSize: 14, fontWeight: "800" },
   clearBtn: {
     marginTop: 10,
     borderRadius: 16,
     paddingVertical: 14,
-    alignItems: 'center',
-    backgroundColor: '#ececf1',
+    alignItems: "center",
+    backgroundColor: "#ececf1",
   },
-  clearBtnText: { color: '#111', fontSize: 14, fontWeight: '800' },
+  clearBtnText: { color: "#111", fontSize: 14, fontWeight: "800" },
+  disabledBtn: {
+    opacity: 0.6,
+  },
 });

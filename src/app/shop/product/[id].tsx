@@ -22,6 +22,8 @@ export default function ShopProductDetailScreen() {
 
   const addItem = useShopCartStore((s) => s.addItem);
   const getItemQuantity = useShopCartStore((s) => s.getItemQuantity);
+  const cartCount = useShopCartStore((s) => s.count);
+  const syncing = useShopCartStore((s) => s.syncing);
 
   const productQuery = useQuery({
     queryKey: ['shop-product', productId],
@@ -40,28 +42,28 @@ export default function ShopProductDetailScreen() {
 
   const activeImage = gallery[activeImageIndex] || gallery[0] || '';
 
-  function handleAddToCart() {
+  async function handleAddToCart() {
     if (!product) return;
 
-    addItem({
-      productId: product.id,
-      name: product.name,
-      price: product.price,
-      image: product.image,
-      stockStatus: product.stockStatus,
-    });
+    try {
+      await addItem({
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        image: product.image,
+        stockStatus: product.stockStatus,
+      });
 
-    Alert.alert(
-      'Added to cart',
-      `${product.name} was added to your cart.`,
-      [
+      Alert.alert('Added to cart', `${product.name} was added to your cart.`, [
         { text: 'Keep Shopping', style: 'cancel' },
         {
           text: 'View Cart',
           onPress: () => router.push('/shop/(shop-tabs)/cart'),
         },
-      ]
-    );
+      ]);
+    } catch (e: any) {
+      Alert.alert('Cart error', e?.message || 'Could not add item to cart.');
+    }
   }
 
   if (productQuery.isLoading) {
@@ -104,7 +106,7 @@ export default function ShopProductDetailScreen() {
             style={styles.cartBtn}
           >
             <Text style={styles.cartBtnText}>
-              Cart{alreadyInCart ? ` (${alreadyInCart})` : ''}
+              Cart{cartCount > 0 ? ` (${cartCount})` : ''}
             </Text>
           </Pressable>
         </View>
@@ -190,9 +192,7 @@ export default function ShopProductDetailScreen() {
             <Text style={styles.price}>{product.price || 'View pricing'}</Text>
 
             {product.regularPrice && product.salePrice ? (
-              <Text style={styles.comparePrice}>
-                Was ${product.regularPrice}
-              </Text>
+              <Text style={styles.comparePrice}>Was ${product.regularPrice}</Text>
             ) : null}
           </View>
 
@@ -219,9 +219,17 @@ export default function ShopProductDetailScreen() {
               <Text style={styles.secondaryBtnText}>View Cart</Text>
             </Pressable>
 
-            <Pressable style={styles.primaryBtn} onPress={handleAddToCart}>
+            <Pressable
+              style={[styles.primaryBtn, syncing && styles.disabledBtn]}
+              onPress={handleAddToCart}
+              disabled={syncing}
+            >
               <Text style={styles.primaryBtnText}>
-                {alreadyInCart > 0 ? 'Add Another' : 'Add to Cart'}
+                {syncing
+                  ? 'Adding...'
+                  : alreadyInCart > 0
+                    ? 'Add Another'
+                    : 'Add to Cart'}
               </Text>
             </Pressable>
           </View>
@@ -364,4 +372,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   secondaryBtnText: { color: '#111', fontSize: 14, fontWeight: '800' },
+  disabledBtn: {
+    opacity: 0.6,
+  },
 });
