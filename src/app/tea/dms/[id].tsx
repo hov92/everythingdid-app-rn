@@ -22,6 +22,7 @@ import {
   replyToDm,
 } from '../../../lib/tea-api';
 import { useAuthStore } from '../../../store/auth-store';
+import TeaSharedPostPreview from '../../../components/tea/TeaSharedPostPreview';
 
 function formatMessageTime(value?: string) {
   if (!value) return '';
@@ -33,6 +34,17 @@ function formatMessageTime(value?: string) {
     month: 'short',
     day: 'numeric',
   });
+}
+
+function extractTeaActivityId(text: string): number | null {
+  const match = String(text || '').match(
+    /https?:\/\/everythingdid\.com\/news-feed\/\?activity_id=(\d+)/i
+  );
+
+  if (!match) return null;
+
+  const id = Number(match[1]);
+  return Number.isFinite(id) ? id : null;
 }
 
 function renderLinkedText(text: string, isMine: boolean) {
@@ -70,6 +82,8 @@ function MessageBubble({
   item: DmMessage;
   isMine: boolean;
 }) {
+  const sharedActivityId = extractTeaActivityId(item.message);
+
   return (
     <View
       style={[
@@ -96,6 +110,10 @@ function MessageBubble({
         )}
 
         {renderLinkedText(item.message, isMine)}
+
+        {sharedActivityId ? (
+          <TeaSharedPostPreview activityId={sharedActivityId} />
+        ) : null}
 
         {!!item.date && (
           <Text
