@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -175,7 +176,7 @@ export default function TeaNewDmScreen() {
       <KeyboardAvoidingView
         style={styles.screen}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={8}
+        keyboardVerticalOffset={24}
       >
         <View style={styles.headerWrap}>
           <Pressable onPress={() => router.back()} style={styles.backBtn}>
@@ -258,7 +259,10 @@ export default function TeaNewDmScreen() {
             keyboardShouldPersistTaps="handled"
           />
         ) : (
-          <View style={styles.composeWrap}>
+          <ScrollView
+            contentContainerStyle={styles.composeWrap}
+            keyboardShouldPersistTaps="handled"
+          >
             <Text style={styles.label}>Message</Text>
 
             <TextInput
@@ -268,6 +272,7 @@ export default function TeaNewDmScreen() {
               placeholderTextColor="#8b8b8b"
               style={styles.messageInput}
               multiline
+              textAlignVertical="top"
             />
 
             <Pressable
@@ -279,7 +284,7 @@ export default function TeaNewDmScreen() {
                 {sendMutation.isPending ? 'Sending...' : 'Send'}
               </Text>
             </Pressable>
-          </View>
+          </ScrollView>
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -391,7 +396,8 @@ const styles = StyleSheet.create({
   composeWrap: {
     paddingHorizontal: 16,
     paddingTop: 6,
-    paddingBottom: 24,
+    paddingBottom: 40,
+    flexGrow: 1,
   },
   label: {
     fontSize: 13,

@@ -2,8 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Linking } from 'react-native';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -31,6 +33,34 @@ function formatMessageTime(value?: string) {
     month: 'short',
     day: 'numeric',
   });
+}
+
+function renderLinkedText(text: string, isMine: boolean) {
+  const parts = String(text || '').split(/(https?:\/\/[^\s]+)/g);
+
+  return (
+    <Text style={[styles.messageText, isMine && styles.messageTextMine]}>
+      {parts.map((part, index) => {
+        const isUrl = /^https?:\/\/[^\s]+$/i.test(part);
+
+        if (!isUrl) {
+          return <Text key={index}>{part}</Text>;
+        }
+
+        return (
+          <Text
+            key={index}
+            style={[styles.linkText, isMine && styles.linkTextMine]}
+            onPress={() => {
+              Linking.openURL(part).catch(() => {});
+            }}
+          >
+            {part}
+          </Text>
+        );
+      })}
+    </Text>
+  );
 }
 
 function MessageBubble({
@@ -65,12 +95,15 @@ function MessageBubble({
           <Text style={styles.messageSender}>{item.senderName}</Text>
         )}
 
-        <Text style={[styles.messageText, isMine && styles.messageTextMine]}>
-          {item.message}
-        </Text>
+        {renderLinkedText(item.message, isMine)}
 
         {!!item.date && (
-          <Text style={[styles.messageTime, isMine && styles.messageTimeMine]}>
+          <Text
+            style={[
+              styles.messageTime,
+              isMine && styles.messageTimeMine,
+            ]}
+          >
             {formatMessageTime(item.date)}
           </Text>
         )}
@@ -107,6 +140,9 @@ export default function TeaDmThreadScreen() {
         queryKey: ['tea-dm-thread', threadId],
       });
       await queryClient.invalidateQueries({ queryKey: ['tea-dm-threads'] });
+    },
+    onError: (e: any) => {
+      Alert.alert('Reply failed', e?.message || 'Could not send reply.');
     },
   });
 
@@ -296,6 +332,13 @@ const styles = StyleSheet.create({
   },
   messageTextMine: {
     color: '#fff',
+  },
+  linkText: {
+    textDecorationLine: 'underline',
+    color: '#175cd3',
+  },
+  linkTextMine: {
+    color: '#9ec5ff',
   },
   messageTime: {
     marginTop: 6,
