@@ -109,10 +109,16 @@ export default function TeaCreateScreen() {
       }
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['tea-posts'] });
-      await queryClient.invalidateQueries({ queryKey: ['tea-post'] });
-      router.back();
-    },
+  setContent('');
+  setPickedImage(null);
+  setPickedVideo(null);
+  setUploadingMedia(false);
+
+  await queryClient.invalidateQueries({ queryKey: ['tea-posts'] });
+  await queryClient.invalidateQueries({ queryKey: ['tea-post'] });
+
+  router.back();
+},
     onError: (e: any) => {
       setUploadingMedia(false);
       Alert.alert('Could not post tea', e?.message || 'Try again.');

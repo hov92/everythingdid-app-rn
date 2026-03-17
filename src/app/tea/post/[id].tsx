@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { VideoView, useVideoPlayer } from "expo-video";
+import TeaShareSheet from '../../../components/tea/TeaShareSheet';
 import {
   ActivityIndicator,
   Alert,
@@ -15,17 +16,19 @@ import {
   Text,
   TextInput,
   View,
-} from 'react-native';
+} from "react-native";
 import {
   createTeaComment,
   deleteTeaComment,
+  deleteTeaPost,
   fetchTeaComments,
   fetchTeaPostDetail,
   TeaComment,
   toggleTeaFavorite,
   updateTeaComment,
-} from '../../../lib/tea-api';
-import { useAuthStore } from '../../../store/auth-store';
+} from "../../../lib/tea-api";
+import { useAuthStore } from "../../../store/auth-store";
+import TeaFollowButton from "../../../components/tea/TeaFollowButton";
 
 export default function TeaPostDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,18 +38,19 @@ export default function TeaPostDetailScreen() {
   const userId = useAuthStore((s) => s.userId);
   const queryClient = useQueryClient();
 
-  const [commentText, setCommentText] = useState('');
+  const [commentText, setCommentText] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
-  const [editingText, setEditingText] = useState('');
+  const [editingText, setEditingText] = useState("");
+  const [shareOpen, setShareOpen] = useState(false);
 
   const postQuery = useQuery({
-    queryKey: ['tea-post', activityId],
+    queryKey: ["tea-post", activityId],
     queryFn: () => fetchTeaPostDetail(activityId),
     enabled: !!activityId,
   });
 
   const commentsQuery = useQuery({
-    queryKey: ['tea-comments', activityId],
+    queryKey: ["tea-comments", activityId],
     queryFn: () => fetchTeaComments(activityId),
     enabled: !!activityId,
   });
@@ -55,11 +59,13 @@ export default function TeaPostDetailScreen() {
     mutationFn: ({ favorite }: { favorite: boolean }) =>
       toggleTeaFavorite({ activityId, favorite }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['tea-post', activityId] });
-      await queryClient.invalidateQueries({ queryKey: ['tea-posts'] });
+      await queryClient.invalidateQueries({
+        queryKey: ["tea-post", activityId],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["tea-posts"] });
     },
     onError: (e: any) => {
-      Alert.alert('Like failed', e?.message || 'Could not update like.');
+      Alert.alert("Like failed", e?.message || "Could not update like.");
     },
   });
 
@@ -70,25 +76,33 @@ export default function TeaPostDetailScreen() {
         content: commentText.trim(),
       }),
     onSuccess: async () => {
-      setCommentText('');
-      await queryClient.invalidateQueries({ queryKey: ['tea-comments', activityId] });
-      await queryClient.invalidateQueries({ queryKey: ['tea-post', activityId] });
-      await queryClient.invalidateQueries({ queryKey: ['tea-posts'] });
+      setCommentText("");
+      await queryClient.invalidateQueries({
+        queryKey: ["tea-comments", activityId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["tea-post", activityId],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["tea-posts"] });
     },
     onError: (e: any) => {
-      Alert.alert('Comment failed', e?.message || 'Could not add comment.');
+      Alert.alert("Comment failed", e?.message || "Could not add comment.");
     },
   });
 
   const deleteCommentMutation = useMutation({
     mutationFn: (commentId: number) => deleteTeaComment(commentId),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['tea-comments', activityId] });
-      await queryClient.invalidateQueries({ queryKey: ['tea-post', activityId] });
-      await queryClient.invalidateQueries({ queryKey: ['tea-posts'] });
+      await queryClient.invalidateQueries({
+        queryKey: ["tea-comments", activityId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["tea-post", activityId],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["tea-posts"] });
     },
     onError: (e: any) => {
-      Alert.alert('Delete failed', e?.message || 'Could not delete comment.');
+      Alert.alert("Delete failed", e?.message || "Could not delete comment.");
     },
   });
 
@@ -100,23 +114,42 @@ export default function TeaPostDetailScreen() {
       }),
     onSuccess: async () => {
       setEditingCommentId(null);
-      setEditingText('');
-      await queryClient.invalidateQueries({ queryKey: ['tea-comments', activityId] });
+      setEditingText("");
+      await queryClient.invalidateQueries({
+        queryKey: ["tea-comments", activityId],
+      });
     },
     onError: (e: any) => {
-      Alert.alert('Edit failed', e?.message || 'Could not update comment.');
+      Alert.alert("Edit failed", e?.message || "Could not update comment.");
+    },
+  });
+
+  const deletePostMutation = useMutation({
+    mutationFn: () => deleteTeaPost(activityId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["tea-posts"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["tea-post", activityId],
+      });
+      router.back();
+    },
+    onError: (e: any) => {
+      Alert.alert("Delete failed", e?.message || "Could not delete post.");
     },
   });
 
   const post = postQuery.data;
+  const canManagePost =
+    !!userId && !!post?.authorId && Number(post.authorId) === Number(userId);
   const comments = commentsQuery.data ?? [];
   const busy = createCommentMutation.isPending;
   const canComment = commentText.trim().length > 0 && !busy;
-  const canSaveEdit = editingText.trim().length > 0 && !editCommentMutation.isPending;
+  const canSaveEdit =
+    editingText.trim().length > 0 && !editCommentMutation.isPending;
 
   function handleComment() {
     if (!token) {
-      router.push('/login');
+      router.push("/login");
       return;
     }
 
@@ -125,12 +158,27 @@ export default function TeaPostDetailScreen() {
   }
 
   function handleDeleteComment(comment: TeaComment) {
-    Alert.alert('Delete comment', 'Are you sure you want to delete this comment?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(
+      "Delete comment",
+      "Are you sure you want to delete this comment?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteCommentMutation.mutate(comment.id),
+        },
+      ],
+    );
+  }
+
+  function handleDeletePost() {
+    Alert.alert("Delete post", "Are you sure you want to delete this post?", [
+      { text: "Cancel", style: "cancel" },
       {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => deleteCommentMutation.mutate(comment.id),
+        text: "Delete",
+        style: "destructive",
+        onPress: () => deletePostMutation.mutate(),
       },
     ]);
   }
@@ -163,10 +211,10 @@ export default function TeaPostDetailScreen() {
   const hasText = !!post.content?.trim();
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
         style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={8}
       >
         <FlatList
@@ -190,7 +238,7 @@ export default function TeaPostDetailScreen() {
               }}
               onCancelEdit={() => {
                 setEditingCommentId(null);
-                setEditingText('');
+                setEditingText("");
               }}
               onChangeEditText={setEditingText}
               onSaveEdit={() => editCommentMutation.mutate()}
@@ -217,16 +265,35 @@ export default function TeaPostDetailScreen() {
 
                     <View style={styles.authorTextWrap}>
                       <Text style={styles.authorName}>{post.author}</Text>
-                      <Text style={styles.metaText}>{formatTime(post.time)}</Text>
+                      <Text style={styles.metaText}>
+                        {formatTime(post.time)}
+                      </Text>
                     </View>
                   </View>
 
-                  <Pressable style={styles.followMiniBtn}>
-                    <Text style={styles.followMiniBtnText}>Follow</Text>
-                  </Pressable>
+                  {canManagePost ? (
+                    <Pressable
+                      onPress={handleDeletePost}
+                      style={styles.deletePostBtn}
+                      disabled={deletePostMutation.isPending}
+                    >
+                      <Text style={styles.deletePostBtnText}>
+                        {deletePostMutation.isPending
+                          ? "Deleting..."
+                          : "Delete"}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <TeaFollowButton
+                      authorId={post.authorId}
+                      currentUserId={userId}
+                    />
+                  )}
                 </View>
 
-                {hasText ? <Text style={styles.postContent}>{post.content}</Text> : null}
+                {hasText ? (
+                  <Text style={styles.postContent}>{post.content}</Text>
+                ) : null}
 
                 {hasVideo ? (
                   <View style={styles.mediaWrap}>
@@ -246,7 +313,7 @@ export default function TeaPostDetailScreen() {
                   <Pressable
                     onPress={() => {
                       if (!token) {
-                        router.push('/login');
+                        router.push("/login");
                         return;
                       }
                       favoriteMutation.mutate({
@@ -265,17 +332,22 @@ export default function TeaPostDetailScreen() {
                       ]}
                     >
                       {favoriteMutation.isPending
-                        ? 'Saving...'
+                        ? "Saving..."
                         : `♥ ${post.favoriteCount ?? 0}`}
                     </Text>
                   </Pressable>
 
                   <View style={styles.actionPill}>
-                    <Text style={styles.actionPillText}>💬 {comments.length}</Text>
+                    <Text style={styles.actionPillText}>
+                      💬 {comments.length}
+                    </Text>
                   </View>
 
-                  <Pressable style={styles.actionPill}>
-                    <Text style={styles.actionPillText}>↻ Repost</Text>
+                  <Pressable
+                    onPress={() => setShareOpen(true)}
+                    style={styles.actionPill}
+                  >
+                    <Text style={styles.actionPillText}>↻ Share</Text>
                   </Pressable>
                 </View>
               </View>
@@ -286,7 +358,9 @@ export default function TeaPostDetailScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No comments yet</Text>
-              <Text style={styles.emptyText}>Start the conversation below.</Text>
+              <Text style={styles.emptyText}>
+                Start the conversation below.
+              </Text>
             </View>
           }
           contentContainerStyle={styles.listContent}
@@ -297,7 +371,7 @@ export default function TeaPostDetailScreen() {
           <TextInput
             value={commentText}
             onChangeText={setCommentText}
-            placeholder={token ? 'Write a comment...' : 'Log in to comment...'}
+            placeholder={token ? "Write a comment..." : "Log in to comment..."}
             placeholderTextColor="#8b8b8b"
             style={styles.commentInput}
             multiline
@@ -306,15 +380,26 @@ export default function TeaPostDetailScreen() {
 
           <Pressable
             onPress={handleComment}
-            style={[styles.commentBtn, !canComment && styles.commentBtnDisabled]}
+            style={[
+              styles.commentBtn,
+              !canComment && styles.commentBtnDisabled,
+            ]}
             disabled={!canComment && !!token}
           >
             <Text style={styles.commentBtnText}>
-              {busy ? 'Posting...' : 'Post'}
+              {busy ? "Posting..." : "Post"}
             </Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <TeaShareSheet
+        visible={shareOpen}
+        onClose={() => setShareOpen(false)}
+        activityId={post.id}
+        author={post.author}
+        content={post.content}
+      />
     </SafeAreaView>
   );
 }
@@ -351,7 +436,10 @@ function TeaCommentCard({
       <View style={styles.commentTopRow}>
         <View style={styles.commentMetaWrap}>
           {item.authorAvatarUrl ? (
-            <Image source={{ uri: item.authorAvatarUrl }} style={styles.commentAvatar} />
+            <Image
+              source={{ uri: item.authorAvatarUrl }}
+              style={styles.commentAvatar}
+            />
           ) : (
             <View style={styles.commentAvatar} />
           )}
@@ -370,7 +458,7 @@ function TeaCommentCard({
 
             <Pressable onPress={onDelete} style={styles.deleteBtn}>
               <Text style={styles.deleteBtnText}>
-                {deleting ? 'Deleting...' : 'Delete'}
+                {deleting ? "Deleting..." : "Delete"}
               </Text>
             </Pressable>
           </View>
@@ -399,7 +487,7 @@ function TeaCommentCard({
               disabled={!canSaveEdit}
             >
               <Text style={styles.saveBtnText}>
-                {editPending ? 'Saving...' : 'Save'}
+                {editPending ? "Saving..." : "Save"}
               </Text>
             </Pressable>
           </View>
@@ -429,41 +517,41 @@ function DetailVideo({ uri }: { uri: string }) {
 }
 
 function formatTime(value: string) {
-  if (!value) return 'Now';
+  if (!value) return "Now";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
 
   return d.toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
+    month: "short",
+    day: "numeric",
   });
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f6f6f7',
+    backgroundColor: "#f6f6f7",
   },
   centerState: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 24,
   },
   errorText: {
     fontSize: 16,
-    color: '#333',
+    color: "#333",
   },
   backBtn: {
     marginTop: 12,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: '#111',
+    backgroundColor: "#111",
   },
   backBtnText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: "#fff",
+    fontWeight: "700",
   },
   listContent: {
     paddingBottom: 150,
@@ -473,33 +561,33 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   backPill: {
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: '#ececf1',
+    backgroundColor: "#ececf1",
     marginBottom: 12,
   },
   backPillText: {
-    color: '#111',
-    fontWeight: '700',
+    color: "#111",
+    fontWeight: "700",
   },
   postCard: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 22,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#ececf1',
+    borderColor: "#ececf1",
   },
   postTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     gap: 10,
-    alignItems: 'center',
+    alignItems: "center",
   },
   authorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 10,
     flex: 1,
   },
@@ -507,105 +595,94 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 999,
-    backgroundColor: '#ececf1',
+    backgroundColor: "#ececf1",
   },
   authorTextWrap: {
     flex: 1,
   },
   authorName: {
-    color: '#222',
+    color: "#222",
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: "800",
   },
   metaText: {
     marginTop: 2,
-    color: '#777',
+    color: "#777",
     fontSize: 12,
-    fontWeight: '500',
-  },
-  followMiniBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#ececf1',
-  },
-  followMiniBtnText: {
-    color: '#333',
-    fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "500",
   },
   postContent: {
     marginTop: 12,
-    color: '#222',
+    color: "#222",
     fontSize: 16,
     lineHeight: 24,
   },
   mediaWrap: {
     marginTop: 12,
     borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: '#eee',
+    overflow: "hidden",
+    backgroundColor: "#eee",
   },
   postImage: {
-    width: '100%',
+    width: "100%",
     height: 360,
-    backgroundColor: '#eee',
+    backgroundColor: "#eee",
   },
   postFooterRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
     marginTop: 14,
-    flexWrap: 'wrap',
+    flexWrap: "wrap",
   },
   actionPill: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#f1f1f4',
+    backgroundColor: "#f1f1f4",
   },
   actionPillActive: {
-    backgroundColor: '#ffe8ef',
+    backgroundColor: "#ffe8ef",
   },
   actionPillText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#444',
+    fontWeight: "700",
+    color: "#444",
   },
   actionPillTextActive: {
-    color: '#d6336c',
+    color: "#d6336c",
   },
   commentHeader: {
     marginTop: 18,
     marginBottom: 8,
     fontSize: 18,
-    fontWeight: '800',
-    color: '#111',
+    fontWeight: "800",
+    color: "#111",
   },
   commentCard: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     marginHorizontal: 16,
     marginTop: 10,
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#ececf1',
+    borderColor: "#ececf1",
   },
   commentTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 10,
   },
   commentMetaWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
   },
   commentAvatar: {
     width: 34,
     height: 34,
     borderRadius: 999,
-    backgroundColor: '#ececf1',
+    backgroundColor: "#ececf1",
     marginRight: 10,
   },
   commentMetaTextWrap: {
@@ -613,62 +690,62 @@ const styles = StyleSheet.create({
   },
   commentAuthor: {
     fontSize: 12,
-    color: '#333',
-    fontWeight: '700',
+    color: "#333",
+    fontWeight: "700",
   },
   commentMetaText: {
     marginTop: 2,
     fontSize: 12,
-    color: '#707070',
-    fontWeight: '500',
+    color: "#707070",
+    fontWeight: "500",
   },
   commentActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   commentText: {
     marginTop: 10,
     fontSize: 14,
     lineHeight: 21,
-    color: '#333',
+    color: "#333",
   },
   editBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: '#e9f0fb',
+    backgroundColor: "#e9f0fb",
   },
   editBtnText: {
-    color: '#175cd3',
+    color: "#175cd3",
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   deleteBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: '#fbe9e9',
+    backgroundColor: "#fbe9e9",
   },
   deleteBtnText: {
-    color: '#b42318',
+    color: "#b42318",
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   editInput: {
     marginTop: 10,
     minHeight: 90,
-    backgroundColor: '#f3f3f6',
+    backgroundColor: "#f3f3f6",
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: '#111',
-    textAlignVertical: 'top',
+    color: "#111",
+    textAlignVertical: "top",
   },
   editActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+    flexDirection: "row",
+    justifyContent: "flex-end",
     gap: 8,
     marginTop: 10,
   },
@@ -676,83 +753,94 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#ececf1',
+    backgroundColor: "#ececf1",
   },
   cancelBtnText: {
-    color: '#333',
+    color: "#333",
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   saveBtn: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#111',
+    backgroundColor: "#111",
   },
   saveBtnDisabled: {
     opacity: 0.45,
   },
   saveBtnText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   empty: {
     paddingHorizontal: 24,
     paddingTop: 32,
-    alignItems: 'center',
+    alignItems: "center",
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '800',
-    color: '#222',
+    fontWeight: "800",
+    color: "#222",
   },
   emptyText: {
     marginTop: 8,
     fontSize: 14,
-    color: '#777',
-    textAlign: 'center',
+    color: "#777",
+    textAlign: "center",
   },
   commentBar: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
     paddingHorizontal: 14,
     paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 18 : 12,
-    backgroundColor: '#fff',
+    paddingBottom: Platform.OS === "ios" ? 18 : 12,
+    backgroundColor: "#fff",
     borderTopWidth: 1,
-    borderTopColor: '#ececf1',
-    flexDirection: 'row',
+    borderTopColor: "#ececf1",
+    flexDirection: "row",
     gap: 8,
-    alignItems: 'flex-end',
+    alignItems: "flex-end",
   },
   commentInput: {
     flex: 1,
     minHeight: 46,
     maxHeight: 110,
-    backgroundColor: '#f3f3f6',
+    backgroundColor: "#f3f3f6",
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: '#111',
+    color: "#111",
   },
   commentBtn: {
     height: 46,
     paddingHorizontal: 18,
     borderRadius: 14,
-    backgroundColor: '#111',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#111",
+    justifyContent: "center",
+    alignItems: "center",
   },
   commentBtnDisabled: {
     opacity: 0.45,
   },
   commentBtnText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: "#fff",
+    fontWeight: "700",
     fontSize: 14,
+  },
+  deletePostBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#fbe9e9",
+  },
+  deletePostBtnText: {
+    color: "#b42318",
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Pressable,
@@ -22,10 +23,18 @@ import {
   View,
   ViewToken,
 } from 'react-native';
-import { fetchTeaPosts, TeaPost, toggleTeaFavorite } from '../../lib/tea-api';
+import {
+  deleteTeaPost,
+  fetchTeaPosts,
+  TeaPost,
+  toggleTeaFavorite,
+} from '../../lib/tea-api';
 import { useAuthStore } from '../../store/auth-store';
 import TeaShellHeader from '../../../src/components/tea/TeaShellHeader';
 import TeaHomeSubTabs from '../../../src/components/tea/TeaHomeSubTabs';
+import TeaFollowButton from '../../../src/components/tea/TeaFollowButton';
+import TeaPostMenu from '../../../src/components/tea/TeaPostMenu';
+import TeaShareSheet from '../../../src/components/tea/TeaShareSheet';
 
 const STORY_PLACEHOLDERS = [
   { id: 's1', label: 'Rey' },
@@ -96,7 +105,10 @@ function AutoPlayFeedVideo({
 const TeaFeedCard = React.memo(function TeaFeedCard({
   item,
   token,
+  currentUserId,
   onLike,
+  onDeletePost,
+  onSharePost,
   liking,
   isActiveVideo,
   soundOnVideoId,
@@ -104,7 +116,10 @@ const TeaFeedCard = React.memo(function TeaFeedCard({
 }: {
   item: TeaPost;
   token: string | null;
+  currentUserId?: number | null;
   onLike: () => void;
+  onDeletePost: () => void;
+  onSharePost: () => void;
   liking: boolean;
   isActiveVideo: boolean;
   soundOnVideoId: number | null;
@@ -113,6 +128,11 @@ const TeaFeedCard = React.memo(function TeaFeedCard({
   const hasImage = !!item.imageUrls?.length;
   const hasVideo = !!item.videoAttachmentIds?.length;
   const hasText = !!item.content?.trim();
+  const isOwner =
+    !!currentUserId &&
+    !!item.authorId &&
+    Number(currentUserId) === Number(item.authorId);
+
   const videoPoster =
     item.edVideoPosterUrl || item.videoPosterUrls?.[0] || VIDEO_PLACEHOLDER;
   const videoUri = item.videoUrls?.[0];
@@ -144,9 +164,19 @@ const TeaFeedCard = React.memo(function TeaFeedCard({
           </View>
         </Pressable>
 
-        <Pressable style={styles.followMiniBtn}>
-          <Text style={styles.followMiniBtnText}>Follow</Text>
-        </Pressable>
+        {isOwner ? (
+          <TeaPostMenu
+            isOwner
+            onEdit={() => router.push(`/tea/post/${item.id}`)}
+            onDelete={onDeletePost}
+            onShare={onSharePost}
+          />
+        ) : (
+          <TeaFollowButton
+            authorId={item.authorId}
+            currentUserId={currentUserId}
+          />
+        )}
       </View>
 
       {hasText ? (
@@ -164,13 +194,13 @@ const TeaFeedCard = React.memo(function TeaFeedCard({
       {hasVideo ? (
         <View style={styles.mediaWrap}>
           {isActiveVideo && videoUri ? (
-  <AutoPlayFeedVideo
-    uri={videoUri}
-    videoId={item.id}
-    soundOnVideoId={soundOnVideoId}
-    setSoundOnVideoId={setSoundOnVideoId}
-  />
-) : (
+            <AutoPlayFeedVideo
+              uri={videoUri}
+              videoId={item.id}
+              soundOnVideoId={soundOnVideoId}
+              setSoundOnVideoId={setSoundOnVideoId}
+            />
+          ) : (
             <>
               <Image
                 source={{ uri: videoPoster }}
@@ -228,8 +258,14 @@ const TeaFeedCard = React.memo(function TeaFeedCard({
           <Text style={styles.actionPillText}>💬 {item.commentCount}</Text>
         </Pressable>
 
-        <Pressable style={styles.actionPill}>
-          <Text style={styles.actionPillText}>↻ Repost</Text>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            onSharePost();
+          }}
+          style={styles.actionPill}
+        >
+          <Text style={styles.actionPillText}>↻ Share</Text>
         </Pressable>
       </View>
     </Pressable>
@@ -240,7 +276,10 @@ export default function TeaHomeScreen() {
   const [search, setSearch] = useState('');
   const [activeVideoId, setActiveVideoId] = useState<number | null>(null);
   const [soundOnVideoId, setSoundOnVideoId] = useState<number | null>(null);
+  const [sharePost, setSharePost] = useState<TeaPost | null>(null);
+
   const token = useAuthStore((s) => s.token);
+  const currentUserId = useAuthStore((s) => s.userId);
   const queryClient = useQueryClient();
 
   const postsQuery = useQuery({
@@ -267,6 +306,17 @@ export default function TeaHomeScreen() {
     },
   });
 
+  const deletePostMutation = useMutation({
+    mutationFn: (activityId: number) => deleteTeaPost(activityId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['tea-posts'] });
+      await queryClient.invalidateQueries({ queryKey: ['tea-post'] });
+    },
+    onError: (e: any) => {
+      Alert.alert('Delete failed', e?.message || 'Could not delete post.');
+    },
+  });
+
   const handleLike = useCallback(
     (item: TeaPost) => {
       if (!token) {
@@ -282,6 +332,28 @@ export default function TeaHomeScreen() {
     [token, favoriteMutation]
   );
 
+  const handleDeletePost = useCallback(
+    (item: TeaPost) => {
+      Alert.alert(
+        'Delete post',
+        'Are you sure you want to delete this post?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => deletePostMutation.mutate(item.id),
+          },
+        ]
+      );
+    },
+    [deletePostMutation]
+  );
+
+  const handleSharePost = useCallback((item: TeaPost) => {
+    setSharePost(item);
+  }, []);
+
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       const firstVisibleVideo = viewableItems.find((viewable) => {
@@ -289,7 +361,9 @@ export default function TeaHomeScreen() {
         return !!item?.videoAttachmentIds?.length;
       });
 
-      setActiveVideoId(firstVisibleVideo ? Number((firstVisibleVideo.item as TeaPost).id) : null);
+      setActiveVideoId(
+        firstVisibleVideo ? Number((firstVisibleVideo.item as TeaPost).id) : null
+      );
     }
   ).current;
 
@@ -299,29 +373,35 @@ export default function TeaHomeScreen() {
   }).current;
 
   const renderItem = useCallback(
-  ({ item }: { item: TeaPost }) => (
-    <TeaFeedCard
-      item={item}
-      token={token}
-      liking={
-        favoriteMutation.isPending &&
-        favoriteMutation.variables?.activityId === item.id
-      }
-      onLike={() => handleLike(item)}
-      isActiveVideo={activeVideoId === item.id}
-      soundOnVideoId={soundOnVideoId}
-      setSoundOnVideoId={setSoundOnVideoId}
-    />
-  ),
-  [
-    token,
-    handleLike,
-    favoriteMutation.isPending,
-    favoriteMutation.variables?.activityId,
-    activeVideoId,
-    soundOnVideoId,
-  ]
-);
+    ({ item }: { item: TeaPost }) => (
+      <TeaFeedCard
+        item={item}
+        token={token}
+        currentUserId={currentUserId}
+        liking={
+          favoriteMutation.isPending &&
+          favoriteMutation.variables?.activityId === item.id
+        }
+        onLike={() => handleLike(item)}
+        onDeletePost={() => handleDeletePost(item)}
+        onSharePost={() => handleSharePost(item)}
+        isActiveVideo={activeVideoId === item.id}
+        soundOnVideoId={soundOnVideoId}
+        setSoundOnVideoId={setSoundOnVideoId}
+      />
+    ),
+    [
+      token,
+      currentUserId,
+      handleLike,
+      handleDeletePost,
+      handleSharePost,
+      favoriteMutation.isPending,
+      favoriteMutation.variables?.activityId,
+      activeVideoId,
+      soundOnVideoId,
+    ]
+  );
 
   const header = useMemo(
     () => (
@@ -374,10 +454,10 @@ export default function TeaHomeScreen() {
   );
 
   useEffect(() => {
-  if (soundOnVideoId && soundOnVideoId !== activeVideoId) {
-    setSoundOnVideoId(null);
-  }
-}, [activeVideoId, soundOnVideoId]);
+    if (soundOnVideoId && soundOnVideoId !== activeVideoId) {
+      setSoundOnVideoId(null);
+    }
+  }, [activeVideoId, soundOnVideoId]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -419,6 +499,14 @@ export default function TeaHomeScreen() {
             onRefresh={() => postsQuery.refetch()}
           />
         }
+      />
+
+      <TeaShareSheet
+        visible={!!sharePost}
+        onClose={() => setSharePost(null)}
+        activityId={sharePost?.id ?? 0}
+        author={sharePost?.author}
+        content={sharePost?.content}
       />
     </SafeAreaView>
   );
@@ -542,17 +630,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  followMiniBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#ececf1',
-  },
-  followMiniBtnText: {
-    color: '#333',
-    fontSize: 12,
-    fontWeight: '700',
-  },
   cardContent: {
     marginTop: 12,
     color: '#222',
@@ -631,17 +708,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   soundBadge: {
-  position: 'absolute',
-  left: 12,
-  bottom: 12,
-  paddingHorizontal: 10,
-  paddingVertical: 6,
-  borderRadius: 999,
-  backgroundColor: 'rgba(0,0,0,0.65)',
-},
-soundBadgeText: {
-  color: '#fff',
-  fontWeight: '700',
-  fontSize: 12,
-},
+    position: 'absolute',
+    left: 12,
+    bottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  soundBadgeText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
 });

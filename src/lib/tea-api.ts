@@ -325,6 +325,7 @@ async function mapActivityItem(
       fallbackPosterUrl = poster.poster_url;
       fallbackPosterId = poster.poster_id;
     } catch (_e) {}
+
   }
 
   return {
@@ -407,7 +408,7 @@ export async function fetchTeaPosts(params?: {
   });
 
   return Promise.all(
-    filtered.map((item:any) =>
+    filtered.map((item: any) =>
       mapActivityItem(item, {
         includeVideoUrls: !!params?.includeVideoUrls,
       }),
@@ -472,7 +473,10 @@ export async function createTeaPost({
   const trimmed = String(content).trim();
 
   const payload: Record<string, any> = {
-    content: trimmed || (mediaIds.length || videoIds.length ? "." : ""),
+    content: trimmed || (mediaIds.length || videoIds.length ? '.' : ''),
+    component: 'activity',
+    type: 'activity_update',
+    privacy: 'public',
   };
 
   if (mediaIds.length) {
@@ -483,7 +487,7 @@ export async function createTeaPost({
     payload.bp_videos = videoIds;
   }
 
-  return apiPost("/activity", payload);
+  return apiPost('/activity', payload);
 }
 
 export async function updateTeaPost({
@@ -554,4 +558,398 @@ export async function saveTeaPoster({
   return edApiPost(`/activity/${activityId}/poster`, {
     poster_id: Number(posterId),
   });
+}
+
+export async function followMember(userId: number | string) {
+  return apiPost(`/members/action/${userId}`, {
+    action: 'follow',
+  });
+}
+
+export async function unfollowMember(userId: number | string) {
+  return apiPost(`/members/action/${userId}`, {
+    action: 'unfollow',
+  });
+}
+
+export async function fetchFollowingMemberIds(): Promise<number[]> {
+  const raw = await apiGet('/members?scope=following&per_page=100');
+
+  const arr = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.members)
+      ? raw.members
+      : [];
+
+  return arr
+    .map((item: any) => Number(item?.id ?? 0))
+    .filter(Boolean);
+}
+
+export async function fetchFollowStatus(userId: number | string): Promise<{
+  isFollowing: boolean;
+}> {
+  const ids = await fetchFollowingMemberIds();
+  return {
+    isFollowing: ids.includes(Number(userId)),
+  };
+}
+
+export async function fetchMeMember() {
+  return apiGet('/members/me');
+}
+
+export async function updateMeMember(payload: { name?: string }) {
+  return apiPost('/members/me', payload);
+}
+
+type XProfileFieldRecord = {
+  id: number;
+  group_id?: number;
+  name?: string;
+  data?: {
+    value?: unknown;
+  };
+};
+
+function extractXProfileValue(field: any): string {
+  const raw =
+    field?.data?.value?.unserialized ??
+    field?.data?.value?.rendered ??
+    field?.data?.value?.raw ??
+    field?.data?.value ??
+    field?.value?.unserialized ??
+    field?.value?.rendered ??
+    field?.value?.raw ??
+    field?.value ??
+    '';
+
+  if (Array.isArray(raw)) {
+    return raw.join(', ');
+  }
+
+  if (raw && typeof raw === 'object') {
+    return String(raw?.rendered ?? raw?.raw ?? '').trim();
+  }
+
+  return String(raw ?? '').trim();
+}
+
+export async function fetchMyXProfileFields(userId: number | string) {
+  const raw = await apiGet(
+    `/xprofile/fields?user_id=${Number(userId)}&fetch_field_data=true`
+  );
+
+  const fields = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.fields)
+      ? raw.fields
+      : [];
+
+  return fields as XProfileFieldRecord[];
+}
+
+export async function findMyBioField(userId: number | string) {
+  const fields = await fetchMyXProfileFields(userId);
+
+  const match = fields.find((field) => {
+    const name = String(field?.name ?? '').trim().toLowerCase();
+    return (
+      name === 'bio' ||
+      name === 'about me' ||
+      name === 'about' ||
+      name === 'description'
+    );
+  });
+
+  if (!match) return null;
+
+  return {
+    id: Number(match.id),
+    group_id: Number(match.group_id ?? 0) || undefined,
+    name: String(match.name ?? ''),
+    value: extractXProfileValue(match),
+  };
+}
+
+export async function updateMyXProfileFields(fields: Array<{
+  field_id: number;
+  group_id?: number;
+  value: string;
+  visibility_level?: 'public' | 'loggedin' | 'friends' | 'adminsonly';
+}>) {
+  return apiPost('/xprofile/update', {
+    fields,
+  });
+}
+
+export type DmThread = {
+  id: number;
+  subject?: string;
+  excerpt?: string;
+  unreadCount?: number;
+  recipients: Array<{
+    id: number;
+    name: string;
+    avatar?: string;
+  }>;
+  updatedAt?: string;
+};
+
+export type DmMessage = {
+  id: number;
+  threadId: number;
+  senderId?: number;
+  senderName?: string;
+  senderAvatar?: string;
+  message: string;
+  date?: string;
+};
+
+export type DmRecipient = {
+  id: number;
+  name: string;
+  mentionName?: string;
+  avatar?: string;
+};
+
+function pickMessageAvatar(item: any): string {
+  return String(
+    item?.avatar?.thumb ??
+      item?.avatar?.full ??
+      item?.sender_avatar?.thumb ??
+      item?.sender_avatar?.full ??
+      item?.user_avatar?.thumb ??
+      item?.user_avatar?.full ??
+      item?.image ??
+      "",
+  ).trim();
+}
+
+function pickRecipientName(item: any): string {
+  return String(
+    item?.name ??
+      item?.display_name ??
+      item?.user_name ??
+      item?.recipient_name ??
+      "",
+  ).trim();
+}
+
+function mapDmRecipients(raw: any): Array<{ id: number; name: string; avatar?: string }> {
+  const possible =
+    raw?.recipients ??
+    raw?.participants ??
+    raw?.members ??
+    raw?.users ??
+    [];
+
+  if (!Array.isArray(possible)) return [];
+
+  return possible
+    .map((item: any) => ({
+      id: Number(item?.id ?? item?.user_id ?? 0),
+      name: pickRecipientName(item) || `User ${Number(item?.id ?? item?.user_id ?? 0)}`,
+      avatar: pickMessageAvatar(item) || undefined,
+    }))
+    .filter((item: any) => item.id);
+}
+
+function mapDmThread(item: any): DmThread {
+  const recipients = mapDmRecipients(item);
+
+  return {
+    id: Number(item?.id ?? item?.thread_id ?? 0),
+    subject: String(item?.subject?.rendered ?? item?.subject ?? "").trim() || undefined,
+    excerpt: htmlToText(
+      item?.excerpt?.rendered ??
+        item?.message?.rendered ??
+        item?.last_message?.rendered ??
+        item?.content?.rendered ??
+        item?.excerpt ??
+        item?.message ??
+        item?.last_message ??
+        item?.content ??
+        "",
+    ),
+    unreadCount: Number(item?.unread_count ?? item?.count_unread ?? 0) || 0,
+    recipients,
+    updatedAt: String(
+      item?.date_gmt ??
+        item?.date ??
+        item?.last_message_date ??
+        item?.message_date ??
+        item?.modified ??
+        "",
+    ).trim() || undefined,
+  };
+}
+
+function mapDmMessage(item: any, fallbackThreadId: number): DmMessage {
+  return {
+    id: Number(item?.id ?? item?.message_id ?? 0),
+    threadId: Number(item?.thread_id ?? fallbackThreadId ?? 0),
+    senderId: Number(item?.sender_id ?? item?.user_id ?? item?.author ?? 0) || undefined,
+    senderName: String(
+      item?.sender_name ??
+        item?.display_name ??
+        item?.name ??
+        item?.user_name ??
+        "",
+    ).trim() || undefined,
+    senderAvatar: pickMessageAvatar(item) || undefined,
+    message: htmlToText(
+      item?.message?.rendered ??
+        item?.content?.rendered ??
+        item?.message ??
+        item?.content ??
+        "",
+    ),
+    date: String(item?.date_gmt ?? item?.date ?? item?.modified ?? "").trim() || undefined,
+  };
+}
+
+export async function fetchDmThreads(): Promise<DmThread[]> {
+  const me = useAuthStore.getState().userId;
+  const qs = new URLSearchParams();
+  qs.set("box", "inbox");
+  qs.set("per_page", "20");
+  qs.set("page", "1");
+
+  if (me) {
+    qs.set("user_id", String(me));
+  }
+
+  const raw = await apiGet(`/messages?${qs.toString()}`);
+
+  const arr = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.threads)
+      ? raw.threads
+      : Array.isArray(raw?.messages)
+        ? raw.messages
+        : [];
+
+  return arr
+    .map((item: any) => mapDmThread(item))
+    .filter((item: DmThread) => item.id);
+}
+
+export async function fetchDmThread(
+  threadId: number | string,
+): Promise<{
+  id: number;
+  subject?: string;
+  recipients: Array<{
+    id: number;
+    name: string;
+    avatar?: string;
+  }>;
+  messages: DmMessage[];
+}> {
+  const raw = await apiGet(`/messages/${Number(threadId)}`);
+
+  const recipients = mapDmRecipients(raw);
+
+  const possibleMessages = Array.isArray(raw?.messages)
+    ? raw.messages
+    : Array.isArray(raw?.thread_messages)
+      ? raw.thread_messages
+      : Array.isArray(raw?.items)
+        ? raw.items
+        : [];
+
+  return {
+    id: Number(raw?.id ?? raw?.thread_id ?? threadId),
+    subject: String(raw?.subject?.rendered ?? raw?.subject ?? "").trim() || undefined,
+    recipients,
+    messages: possibleMessages
+      .map((item: any) => mapDmMessage(item, Number(threadId)))
+      .filter((item: DmMessage) => item.id),
+  };
+}
+
+export async function searchDmRecipients(
+  term: string,
+  exclude: number[] = [],
+): Promise<DmRecipient[]> {
+  const qs = new URLSearchParams();
+  qs.set("term", term.trim());
+
+  if (exclude.length) {
+    qs.set("exclude", exclude.join(","));
+  }
+
+  const raw = await apiGet(`/messages/search-recipients?${qs.toString()}`);
+
+  const arr = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.recipients)
+      ? raw.recipients
+      : Array.isArray(raw?.members)
+        ? raw.members
+        : [];
+
+  return arr
+    .map((item: any) => ({
+      id: Number(item?.id ?? item?.user_id ?? 0),
+      name:
+        String(
+          item?.name ??
+            item?.display_name ??
+            item?.user_name ??
+            "",
+        ).trim() || `User ${Number(item?.id ?? item?.user_id ?? 0)}`,
+      mentionName: String(item?.mention_name ?? item?.user_login ?? "").trim() || undefined,
+      avatar: pickMessageAvatar(item) || undefined,
+    }))
+    .filter((item: DmRecipient) => item.id);
+}
+
+export async function searchExistingDmThread(recipientId: number | string) {
+  const qs = new URLSearchParams();
+  qs.set("recipient_id", String(Number(recipientId)));
+
+  return apiGet(`/messages/search-thread?${qs.toString()}`);
+}
+
+export async function sendNewDm(params: {
+  recipientIds: number[];
+  subject?: string;
+  message: string;
+}) {
+  return apiPost("/messages", {
+    recipients: params.recipientIds,
+    subject: params.subject?.trim() || "New message",
+    message: params.message.trim(),
+  });
+}
+
+export async function replyToDm(params: {
+  threadId: number;
+  message: string;
+}) {
+  return apiPost("/messages", {
+    id: Number(params.threadId),
+    message: params.message.trim(),
+  });
+}
+
+export function getTeaPostShareUrl(activityId: number | string) {
+  return `https://everythingdid.com/news-feed/?activity_id=${Number(activityId)}`;
+}
+
+export function getTeaPostShareText(params: {
+  activityId: number | string;
+  author?: string;
+  content?: string;
+}) {
+  const url = getTeaPostShareUrl(params.activityId);
+  const preview = String(params.content ?? '').trim();
+  const clipped =
+    preview.length > 120 ? `${preview.slice(0, 117)}...` : preview;
+
+  return clipped
+    ? `${params.author ?? 'Someone'} shared Tea: "${clipped}"\n\n${url}`
+    : `${params.author ?? 'Someone'} shared Tea:\n\n${url}`;
 }

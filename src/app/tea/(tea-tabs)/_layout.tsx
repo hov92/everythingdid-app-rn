@@ -26,28 +26,32 @@ export default function TeaTabsLayout() {
           title: 'Home',
         }}
       />
-      <Tabs.Screen
-        name="inbox"
-        options={{
-          title: 'DMs',
-        }}
-      />
-      <Tabs.Screen
-        name="create"
-        options={{
-          title: 'Create',
-        }}
-      />
+
       <Tabs.Screen
         name="explore"
         options={{
           title: 'Explore',
         }}
       />
+
+      <Tabs.Screen
+        name="create"
+        options={{
+          title: 'Create',
+        }}
+      />
+
+      <Tabs.Screen
+        name="dms/index"
+        options={{
+          title: 'DMs',
+        }}
+      />
+
       <Tabs.Screen
         name="me"
         options={{
-          title: 'Profile',
+          title: 'Me',
         }}
       />
     </Tabs>

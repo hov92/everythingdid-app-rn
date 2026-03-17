@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -12,71 +13,88 @@ import {
   View,
 } from 'react-native';
 import { fetchTeaPosts, TeaPost } from '../../../lib/tea-api';
+import { useAuthStore } from '../../../store/auth-store';
+import TeaFollowButton from '../../../components/tea/TeaFollowButton';
+
+const VIDEO_PLACEHOLDER =
+  'https://everythingdid.com/wp-content/plugins/buddyboss-platform/bp-templates/bp-nouveau/images/video-placeholder.jpg';
+
+function formatTime(value: string) {
+  if (!value) return 'Now';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+
+  return d.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+  });
+}
 
 export default function TeaProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const userId = Number(id ?? 0);
+  const profileUserId = Number(id ?? 0);
+  const currentUserId = useAuthStore((s) => s.userId);
 
   const postsQuery = useQuery({
-    queryKey: ['tea-profile-posts', userId],
-    queryFn: () => fetchTeaPosts({ userId, feed: 'profile' }),
-    enabled: !!userId,
+    queryKey: ['tea-posts', 'profile', profileUserId],
+    queryFn: () =>
+      fetchTeaPosts({
+        feed: 'profile',
+        userId: profileUserId,
+      }),
+    enabled: !!profileUserId,
   });
 
-  const profileName = useMemo(() => {
-    const first = postsQuery.data?.[0]?.author;
-    return first || `User ${userId}`;
-  }, [postsQuery.data, userId]);
+  const posts = postsQuery.data ?? [];
+  const profilePost = posts[0];
+
+  const profileName = profilePost?.author || `User ${profileUserId}`;
+  const profileAvatar = profilePost?.authorAvatarUrl || '';
+
+  const header = useMemo(
+    () => (
+      <View style={styles.headerWrap}>
+        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <Text style={styles.backBtnText}>Back</Text>
+        </Pressable>
+
+        <View style={styles.profileCard}>
+          {profileAvatar ? (
+            <Image source={{ uri: profileAvatar }} style={styles.profileAvatar} />
+          ) : (
+            <View style={styles.profileAvatar} />
+          )}
+
+          <Text style={styles.profileName}>{profileName}</Text>
+
+          <View style={styles.profileMetaRow}>
+            <View style={styles.profileMetaBlock}>
+              <Text style={styles.profileMetaValue}>{posts.length}</Text>
+              <Text style={styles.profileMetaLabel}>Posts</Text>
+            </View>
+          </View>
+
+          <View style={styles.profileActions}>
+            <TeaFollowButton
+              authorId={profileUserId}
+              currentUserId={currentUserId}
+            />
+          </View>
+        </View>
+
+        <Text style={styles.sectionTitle}>Tea Posts</Text>
+      </View>
+    ),
+    [profileAvatar, profileName, posts.length, profileUserId, currentUserId]
+  );
 
   return (
     <SafeAreaView style={styles.screen}>
       <FlatList
-        data={postsQuery.data ?? []}
+        data={posts}
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <Pressable
-            style={styles.card}
-            onPress={() => router.push(`/tea/post/${item.id}`)}
-          >
-            <Text style={styles.cardText} numberOfLines={4}>
-              {item.content}
-            </Text>
-          </Pressable>
-        )}
-        ListHeaderComponent={
-          <View style={styles.headerWrap}>
-            <Pressable onPress={() => router.back()} style={styles.backBtn}>
-              <Text style={styles.backBtnText}>Back</Text>
-            </Pressable>
-
-            <View style={styles.profileCard}>
-              <View style={styles.avatar} />
-              <Text style={styles.name}>{profileName}</Text>
-              <Text style={styles.handle}>@{String(profileName).toLowerCase().replace(/\s+/g, '')}</Text>
-
-              <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{postsQuery.data?.length ?? 0}</Text>
-                  <Text style={styles.statLabel}>Posts</Text>
-                </View>
-
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>0</Text>
-                  <Text style={styles.statLabel}>Followers</Text>
-                </View>
-
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>0</Text>
-                  <Text style={styles.statLabel}>Following</Text>
-                </View>
-              </View>
-
-              <Pressable style={styles.followBtn}>
-                <Text style={styles.followBtnText}>Follow</Text>
-              </Pressable>
-            </View>
-          </View>
-        }
+        renderItem={({ item }) => <ProfilePostCard item={item} />}
+        ListHeaderComponent={header}
         ListEmptyComponent={
           postsQuery.isLoading ? (
             <View style={styles.centerState}>
@@ -91,8 +109,10 @@ export default function TeaProfileScreen() {
             </View>
           ) : (
             <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>No posts yet</Text>
-              <Text style={styles.emptyText}>This user hasn’t posted yet.</Text>
+              <Text style={styles.emptyTitle}>No Tea posts yet</Text>
+              <Text style={styles.emptyText}>
+                This user has not posted anything yet.
+              </Text>
             </View>
           )
         }
@@ -108,13 +128,65 @@ export default function TeaProfileScreen() {
   );
 }
 
+function ProfilePostCard({ item }: { item: TeaPost }) {
+  const hasVideo = !!item.videoAttachmentIds?.length;
+  const hasImage = !!item.imageUrls?.length;
+  const previewImage =
+    item.edVideoPosterUrl ||
+    item.videoPosterUrls?.[0] ||
+    item.imageUrls?.[0] ||
+    VIDEO_PLACEHOLDER;
+
+  return (
+    <Pressable
+      style={styles.card}
+      onPress={() => router.push(`/tea/post/${item.id}`)}
+    >
+      <View style={styles.cardTopRow}>
+        <Text style={styles.cardDate}>{formatTime(item.time)}</Text>
+      </View>
+
+      {!!item.content?.trim() ? (
+        <Text style={styles.cardContent} numberOfLines={4}>
+          {item.content}
+        </Text>
+      ) : null}
+
+      {hasVideo || hasImage ? (
+        <View style={styles.mediaWrap}>
+          <Image
+            source={{ uri: previewImage }}
+            style={styles.cardImage}
+            resizeMode="cover"
+          />
+          {hasVideo ? (
+            <View style={styles.videoBadge}>
+              <Text style={styles.videoBadgeText}>▶ Video</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View style={styles.cardStats}>
+        <Text style={styles.cardStatText}>♥ {item.favoriteCount ?? 0}</Text>
+        <Text style={styles.cardStatText}>💬 {item.commentCount}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f6f6f7' },
-  listContent: { paddingBottom: 28 },
+  screen: {
+    flex: 1,
+    backgroundColor: '#f6f6f7',
+  },
+  listContent: {
+    paddingBottom: 28,
+  },
   headerWrap: {
     paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 10,
+    paddingBottom: 8,
   },
   backBtn: {
     alignSelf: 'flex-start',
@@ -136,66 +208,108 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
   },
-  avatar: {
-    width: 82,
-    height: 82,
+  profileAvatar: {
+    width: 88,
+    height: 88,
     borderRadius: 999,
     backgroundColor: '#ececf1',
   },
-  name: {
+  profileName: {
     marginTop: 12,
     fontSize: 22,
     fontWeight: '800',
     color: '#111',
+    textAlign: 'center',
   },
-  handle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: '#777',
-  },
-  statsRow: {
+  profileMetaRow: {
     flexDirection: 'row',
-    gap: 24,
-    marginTop: 16,
+    justifyContent: 'center',
+    marginTop: 14,
+    marginBottom: 14,
   },
-  statItem: {
+  profileMetaBlock: {
     alignItems: 'center',
+    minWidth: 72,
   },
-  statNumber: {
-    fontSize: 18,
+  profileMetaValue: {
+    fontSize: 20,
     fontWeight: '800',
     color: '#111',
   },
-  statLabel: {
+  profileMetaLabel: {
     marginTop: 4,
     fontSize: 12,
-    color: '#777',
     fontWeight: '600',
+    color: '#666',
   },
-  followBtn: {
+  profileActions: {
+    marginTop: 4,
+  },
+  sectionTitle: {
     marginTop: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 999,
-    backgroundColor: '#111',
-  },
-  followBtnText: {
-    color: '#fff',
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111',
   },
   card: {
     marginHorizontal: 16,
     marginTop: 10,
     backgroundColor: '#fff',
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#ececf1',
     padding: 16,
   },
-  cardText: {
+  cardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardDate: {
+    fontSize: 12,
+    color: '#777',
+    fontWeight: '600',
+  },
+  cardContent: {
+    marginTop: 10,
     fontSize: 15,
     lineHeight: 22,
     color: '#222',
+  },
+  mediaWrap: {
+    marginTop: 12,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#eee',
+  },
+  cardImage: {
+    width: '100%',
+    height: 280,
+    backgroundColor: '#eee',
+  },
+  videoBadge: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  videoBadgeText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  cardStats: {
+    flexDirection: 'row',
+    gap: 14,
+    marginTop: 12,
+  },
+  cardStatText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#555',
   },
   centerState: {
     paddingTop: 40,
